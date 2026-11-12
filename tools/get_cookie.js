@@ -19,7 +19,7 @@ const net = require('net');
 const http = require('http');
 const https = require('https');
 const readline = require('readline');
-const { spawn, exec } = require('child_process');
+const { spawn, exec, execSync } = require('child_process');
 const { renderANSI, renderSVG } = require('./mini_qr');
 
 // 从 manifest.json 动态读取插件版本号
@@ -49,7 +49,7 @@ function parseArgs() {
       options.mode = 1;
     } else if (arg === '-q' || arg === '--quit') {
       options.mode = 2;
-    } else if (arg === '--qr' || arg === '-t' || arg === '--terminal-qr') {
+    } else if (arg === '--qr-console' || arg === '--qr' || arg === '-t' || arg === '--terminal-qr') {
       options.mode = 3;
     } else if (arg === '--qr-web' || arg === '-w' || arg === '--web-qr') {
       options.mode = 4;
@@ -80,7 +80,7 @@ function printHelp() {
   (无参数)             显示交互式菜单，输入数字回车即可运行
   -b, --browser        [模式 1] 浏览器常驻模式 (抓取后保留窗口供边听边对照)
   -q, --quit           [模式 2] 快速提取模式   (抓取成功后立即自动关闭浏览器)
-  --qr                 [模式 3] 终端扫码模式   (纯命令行：在终端绘制二维码供手机扫码)
+  --qr-console         [模式 3] 控制台扫码模式 (纯命令行：在终端绘制二维码供手机扫码)
   --qr-web             [模式 4] 网页扫码即退   (拉起独立小窗展示高清二维码，扫码后自动关闭)
 
 通用选项:
@@ -253,7 +253,7 @@ function promptUserMode() {
 
   [1] 浏览器常驻模式 (拉起浏览器登录，抓取后保留窗口供边听边对照)
   [2] 快速提取模式   (拉起浏览器登录，抓取成功后立即自动关闭)
-  [3] 终端扫码模式   (纯命令行：在终端绘制字符二维码供手机扫码)
+  [3] 控制台扫码模式 (纯命令行：在终端绘制字符二维码供手机扫码)
   [4] 网页扫码即退   (拉起极简小窗展示高清二维码，扫码成功后自动关闭)
 `);
 
@@ -339,7 +339,7 @@ async function runBrowserMode(options, autoQuit = false) {
           console.log(`🚪 正在自动关闭浏览器窗口…`);
           try {
             if (process.platform === 'win32') {
-              exec(`taskkill /F /T /PID ${browserProcess.pid}`, { windowsHide: true });
+              execSync(`taskkill /F /T /PID ${browserProcess.pid}`, { stdio: 'ignore' });
             } else {
               process.kill(-browserProcess.pid, 'SIGTERM');
             }
@@ -359,7 +359,7 @@ async function runBrowserMode(options, autoQuit = false) {
     console.error(`\n❌ 等待超时 (${options.timeout}秒)。未检测到登录完成，请重新运行工具。`);
     try {
       if (process.platform === 'win32') {
-        exec(`taskkill /F /T /PID ${browserProcess.pid}`, { windowsHide: true });
+        execSync(`taskkill /F /T /PID ${browserProcess.pid}`, { stdio: 'ignore' });
       } else {
         process.kill(-browserProcess.pid, 'SIGTERM');
       }
@@ -387,6 +387,7 @@ async function runDeviceFlowMode(mode = 3) {
 
   let browserProcess = null;
   let tempHtmlPath = null;
+  let tempProfileDir = null;
 
   if (mode === 3) {
     console.log(`[2/3] 请使用手机扫码或浏览器打开下方链接授权：\n`);
@@ -471,13 +472,18 @@ async function runDeviceFlowMode(mode = 3) {
     tempHtmlPath = path.join(os.tmpdir(), `lazer_qr_${Date.now()}.html`);
     fs.writeFileSync(tempHtmlPath, html, 'utf8');
 
+    tempProfileDir = path.join(os.tmpdir(), `lazer_qr_profile_${Date.now()}`);
+    fs.mkdirSync(tempProfileDir, { recursive: true });
+
     const browserPath = getCandidateBrowserPaths();
     if (browserPath) {
       browserProcess = spawn(browserPath, [
         `--app=file:///${tempHtmlPath.replace(/\\/g, '/')}`,
+        `--user-data-dir=${tempProfileDir}`,
         '--window-size=380,620',
         '--window-position=450,150',
-        '--no-first-run'
+        '--no-first-run',
+        '--no-default-browser-check'
       ], { detached: true, stdio: 'ignore' });
     }
 
@@ -521,12 +527,14 @@ async function runDeviceFlowMode(mode = 3) {
     if (browserProcess && browserProcess.pid) {
       try {
         if (process.platform === 'win32') {
-          // Windows 上必须用 taskkill 杀掉整个 Chrome 进程树
-          exec(`taskkill /F /T /PID ${browserProcess.pid}`, { windowsHide: true });
+          execSync(`taskkill /F /T /PID ${browserProcess.pid}`, { stdio: 'ignore' });
         } else {
           process.kill(-browserProcess.pid, 'SIGTERM');
         }
       } catch (_) {}
+    }
+    if (tempProfileDir) {
+      try { fs.rmSync(tempProfileDir, { recursive: true, force: true }); } catch (_) {}
     }
     if (tempHtmlPath) {
       try { fs.unlinkSync(tempHtmlPath); } catch (_) {}
