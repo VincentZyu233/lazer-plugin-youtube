@@ -1,7 +1,7 @@
 {
   "id": "lazer.youtube",
   "name": "YouTube Music",
-  "version": "0.0.18",
+  "version": "0.0.19",
   "description": "专为 Lazer 打造的 YouTube & YouTube Music Lua Gateway 插件。",
   "author": "VincentZyu",
   "entry": "main.lua",
@@ -9,6 +9,7 @@
   "provider": "youtube",
   "capabilities": [
     "search",
+    "lyrics",
     "recommendations",
     "homeFeed",
     "radio",

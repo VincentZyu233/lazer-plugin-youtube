@@ -50,7 +50,8 @@ function plugin.call(operation, args)
     local song_id = args.id or args.songId or ""
     return catalog.song(song_id)
   elseif operation == "lyrics" then
-    return { lrc = "" }
+    local song_id = args.id or args.songId or ""
+    return catalog.lyrics(song_id)
   elseif operation == "favorites" then
     return catalog.favorites(args)
   elseif operation == "homeFeed" then

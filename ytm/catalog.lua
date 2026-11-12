@@ -645,4 +645,131 @@ function catalog.favorites(args)
   return songs
 end
 
+--- 获取歌曲歌词（LyricFind 官方全本静态歌词）
+function catalog.lyrics(song_id)
+  if not song_id or type(song_id) ~= "string" or string.len(song_id) == 0 then
+    return {}
+  end
+
+  -- 第 1 步：向 next 接口查询歌词专属 browseId
+  local next_data, next_err = client.post_music("next", {
+    videoId = song_id
+  })
+
+  if not next_data or type(next_data) ~= "table" then
+    return {}
+  end
+
+  local watch_next = next_data.contents and next_data.contents.singleColumnMusicWatchNextResultsRenderer
+  local tabbed = watch_next and watch_next.tabbedRenderer and watch_next.tabbedRenderer.watchNextTabbedResultsRenderer
+  local tabs = tabbed and tabbed.tabs
+
+  if not tabs or type(tabs) ~= "table" then
+    return {}
+  end
+
+  local lyrics_browse_id = nil
+  for _, t in ipairs(tabs) do
+    local rend = t.tabRenderer
+    if rend then
+      -- 如果标记为 unselectable，说明是纯音乐或官方未收录歌词
+      if rend.unselectable == true then
+        return {}
+      end
+      local endpoint = rend.endpoint and rend.endpoint.browseEndpoint
+      local b_id = endpoint and endpoint.browseId
+      if b_id and type(b_id) == "string" then
+        if string.sub(b_id, 1, 4) == "MPLY" or rend.title == "歌词" or rend.title == "Lyrics" then
+          lyrics_browse_id = b_id
+          break
+        end
+      end
+    end
+  end
+
+  if not lyrics_browse_id then
+    return {}
+  end
+
+  -- 第 2 步：向 browse 接口拉取歌词正文
+  local browse_data, browse_err = client.post_music("browse", {
+    browseId = lyrics_browse_id
+  })
+
+  if not browse_data or type(browse_data) ~= "table" then
+    return {}
+  end
+
+  local section_list = browse_data.contents and browse_data.contents.sectionListRenderer
+  local contents = section_list and section_list.contents
+  if not contents or type(contents) ~= "table" then
+    return {}
+  end
+
+  local raw_text = ""
+  local footer_text = ""
+  for _, sec in ipairs(contents) do
+    local shelf = sec.musicDescriptionShelfRenderer
+    if shelf then
+      if shelf.description and shelf.description.runs then
+        local parts = {}
+        for _, r in ipairs(shelf.description.runs) do
+          if r.text then
+            table.insert(parts, r.text)
+          end
+        end
+        raw_text = table.concat(parts, "")
+      end
+      if shelf.footer and shelf.footer.runs then
+        local f_parts = {}
+        for _, fr in ipairs(shelf.footer.runs) do
+          if fr.text then
+            table.insert(f_parts, fr.text)
+          end
+        end
+        footer_text = table.concat(f_parts, "")
+      end
+      if string.len(raw_text) > 0 then
+        break
+      end
+    end
+  end
+
+  if string.len(raw_text) == 0 then
+    return {}
+  end
+
+  -- 第 3 步：按换行切分为逐行歌词
+  local lines = {}
+  for line in string.gmatch(raw_text, "([^\r\n]+)") do
+    local trimmed = trim_str(line)
+    if string.len(trimmed) > 0 then
+      table.insert(lines, {
+        text = trimmed
+      })
+    end
+  end
+
+  if #lines == 0 then
+    return {}
+  end
+
+  if string.len(footer_text) > 0 then
+    table.insert(lines, {
+      text = " "
+    })
+    table.insert(lines, {
+      text = footer_text
+    })
+  end
+
+  return {
+    {
+      lines = lines,
+      synced = false,
+      lrc = raw_text
+    }
+  }
+end
+
 return catalog
