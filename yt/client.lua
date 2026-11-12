@@ -1,4 +1,4 @@
-local config = require("yt/config")
+local config = require("yt.config")
 local client = {}
 
 local function do_post(url, payload, client_profile)

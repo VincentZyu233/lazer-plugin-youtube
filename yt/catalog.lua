@@ -1,5 +1,5 @@
-local client = require("yt/client")
-local config = require("yt/config")
+local client = require("yt.client")
+local config = require("yt.config")
 local catalog = {}
 
 -- 提取文本（兼容 runs 结构与 simpleText）
@@ -39,15 +39,12 @@ end
 --- 尝试从用户输入中提取 YouTube 11位视频 ID
 local function try_extract_video_id(input)
   if not input or type(input) ~= "string" then return nil end
-  -- 匹配 youtu.be/xxxx
   local id = string.match(input, "youtu%.be/([%w%-_]+)")
   if id and string.len(id) == 11 then return id end
 
-  -- 匹配 watch?v=xxxx
   id = string.match(input, "[%?&]v=([%w%-_]+)")
   if id and string.len(id) == 11 then return id end
 
-  -- 若本身正好是 11 位合法 ID
   if string.len(input) == 11 and string.match(input, "^[%w%-_]+$") then
     return input
   end
@@ -55,9 +52,10 @@ local function try_extract_video_id(input)
 end
 
 --- 搜索单曲与视频
-function catalog.search(query, page, limit)
-  if not query or string.len(query) == 0 then
-    return { songs = {}, total = 0 }
+function catalog.search(args)
+  local query = tostring(args and args.query or "")
+  if string.len(query) == 0 then
+    return { songs = {}, albums = {}, artists = {}, playlists = {} }
   end
 
   -- 特性 1：如果用户粘贴了 YouTube 链接，秒开对应视频
@@ -67,14 +65,16 @@ function catalog.search(query, page, limit)
       songs = {
         {
           id = direct_id,
-          name = "YouTube Track (" .. direct_id .. ")",
-          artists = { { id = "unknown", name = "YouTube" } },
-          album = { id = "yt_" .. direct_id, name = "YouTube Audio" },
+          name = "YouTube Video (" .. direct_id .. ")",
+          artists = { { id = "yt_channel", name = "YouTube" } },
+          album = { id = "yt_album_" .. direct_id, name = "YouTube Single", cover = "https://i.ytimg.com/vi/" .. direct_id .. "/hqdefault.jpg" },
           cover = "https://i.ytimg.com/vi/" .. direct_id .. "/hqdefault.jpg",
           duration = 0
         }
       },
-      total = 1
+      albums = {},
+      artists = {},
+      playlists = {}
     }
   end
 
@@ -84,7 +84,7 @@ function catalog.search(query, page, limit)
   }
   local data, err = client.post_youtube("search", payload, config.CLIENT_IOS)
   if not data then
-    return { songs = {}, total = 0, error = err }
+    return { songs = {}, albums = {}, artists = {}, playlists = {} }
   end
 
   local songs = {}
@@ -102,8 +102,10 @@ function catalog.search(query, page, limit)
         local title = extract_text(vr.title)
         local artist_name = extract_text(vr.ownerText or vr.shortBylineText)
         local cover_url = extract_thumbnail(vr.thumbnail and vr.thumbnail.thumbnails)
-        
-        -- 尝试解析时长（秒）
+        if string.len(cover_url) == 0 then
+          cover_url = "https://i.ytimg.com/vi/" .. vid .. "/hqdefault.jpg"
+        end
+
         local dur_sec = 0
         local dur_text = extract_text(vr.lengthText)
         if dur_text and string.len(dur_text) > 0 then
@@ -121,7 +123,8 @@ function catalog.search(query, page, limit)
           },
           album = {
             id = "yt_album_" .. vid,
-            name = "YouTube Single"
+            name = "YouTube Single",
+            cover = cover_url
           },
           cover = cover_url,
           duration = dur_sec
@@ -132,7 +135,20 @@ function catalog.search(query, page, limit)
 
   return {
     songs = songs,
-    total = table.getn and table.getn(songs) or #songs
+    albums = {},
+    artists = {},
+    playlists = {}
+  }
+end
+
+function catalog.song(id)
+  return {
+    id = id,
+    name = "YouTube Video (" .. tostring(id) .. ")",
+    artists = { { id = "yt_channel", name = "YouTube" } },
+    album = { id = "yt_album_" .. tostring(id), name = "YouTube Audio" },
+    cover = "https://i.ytimg.com/vi/" .. tostring(id) .. "/hqdefault.jpg",
+    duration = 0
   }
 end
 

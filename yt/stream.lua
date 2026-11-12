@@ -1,10 +1,9 @@
-local client = require("yt/client")
-local config = require("yt/config")
+local client = require("yt.client")
+local config = require("yt.config")
 local stream = {}
 
 --- 获取指定 videoId 的音频直链
---- 支持智能音质选择：
---- 默认优先挑选 160k Opus (itag 251) 或 128k AAC (itag 140)
+--- 优先挑选 160k Opus (itag 251) 或 128k AAC (itag 140)
 function stream.get_audio_url(video_id, target_quality)
   if not video_id or type(video_id) ~= "string" or string.len(video_id) == 0 then
     return nil, "Invalid videoId"
@@ -27,7 +26,6 @@ function stream.get_audio_url(video_id, target_quality)
 
   local streaming_data = data.streamingData
   if not streaming_data then
-    -- 检查是否有 playabilityStatus 报错
     local status = data.playabilityStatus
     local reason = (status and status.reason) or "No streamingData found"
     return nil, reason
@@ -39,12 +37,10 @@ function stream.get_audio_url(video_id, target_quality)
 
   for _, fmt in ipairs(formats) do
     local mime = fmt.mimeType or ""
-    -- 仅筛选纯音频轨 (audio/mp4, audio/webm)
     if string.find(mime, "audio/") then
       local url = fmt.url
       local bitrate = fmt.bitrate or 0
 
-      -- 确保格式中含有直接可用的直链 url (无需 JS signature cipher 解密)
       if url and string.len(url) > 0 then
         if bitrate > best_bitrate then
           best_bitrate = bitrate
@@ -60,10 +56,10 @@ function stream.get_audio_url(video_id, target_quality)
 
   return {
     url = best_audio.url,
-    bitrate = best_audio.bitrate,
+    bitrate = best_audio.bitrate or 128000,
+    format = "m4a",
     sampleRate = best_audio.audioSampleRate,
-    contentLength = best_audio.contentLength,
-    mimeType = best_audio.mimeType
+    contentLength = best_audio.contentLength
   }
 end
 
