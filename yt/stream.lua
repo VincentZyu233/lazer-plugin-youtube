@@ -13,15 +13,42 @@ function stream.get_audio_url(video_id, target_quality)
     videoId = video_id,
     playbackContext = {
       contentPlaybackContext = {
-        html5Preference = "HTML5_PREF_WANTS"
+        html5Preference = "HTML5_PREF_WANTS",
+        signatureTimestamp = 20760
       }
-    }
+    },
+    contentCheckOk = true,
+    racyCheckOk = true
   }
 
-  -- 核心：伪装为 iOS 客户端，绕过网页端复杂反爬与 JS 解密 (REQUIRE_JS_PLAYER = False)
-  local data, err = client.post_youtube("player", payload, config.CLIENT_IOS)
-  if not data then
-    return nil, err or "Failed to call player endpoint"
+  local ctx = {
+    client = config.CLIENT_VISIONOS
+  }
+  payload.context = ctx
+
+  local headers = {
+    ["X-YouTube-Client-Name"] = "101",
+    ["X-YouTube-Client-Version"] = "1.02",
+    ["Origin"] = "https://www.youtube.com",
+    ["User-Agent"] = config.CLIENT_VISIONOS.userAgent,
+    ["Content-Type"] = "application/json"
+  }
+
+  local url = config.HOST_YOUTUBE .. "/youtubei/v1/player"
+  local res = host.http({
+    url = url,
+    method = "POST",
+    headers = headers,
+    body = host.json_encode(payload)
+  })
+
+  if not res or res.status ~= 200 then
+    return nil, "HTTP " .. tostring(res and res.status or "nil")
+  end
+
+  local ok, data = pcall(host.json_decode, res.body)
+  if not ok or not data then
+    return nil, "Failed to parse player response"
   end
 
   local streaming_data = data.streamingData
@@ -38,10 +65,10 @@ function stream.get_audio_url(video_id, target_quality)
   for _, fmt in ipairs(formats) do
     local mime = fmt.mimeType or ""
     if string.find(mime, "audio/") then
-      local url = fmt.url
+      local audio_url = fmt.url
       local bitrate = fmt.bitrate or 0
 
-      if url and string.len(url) > 0 then
+      if audio_url and string.len(audio_url) > 0 then
         if bitrate > best_bitrate then
           best_bitrate = bitrate
           best_audio = fmt
@@ -54,12 +81,17 @@ function stream.get_audio_url(video_id, target_quality)
     return nil, "No unencrypted direct audio stream found"
   end
 
+  local mime = best_audio.mimeType or ""
+  local ext = "m4a"
+  if string.find(mime, "webm") or string.find(mime, "opus") then
+    ext = "webm"
+  end
+
   return {
     url = best_audio.url,
     bitrate = best_audio.bitrate or 128000,
-    format = "m4a",
-    sampleRate = best_audio.audioSampleRate,
-    contentLength = best_audio.contentLength
+    format = ext,
+    duration = math.floor((tonumber(best_audio.approxDurationMs) or 0) / 1000)
   }
 end
 
