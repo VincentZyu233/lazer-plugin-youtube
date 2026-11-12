@@ -31,7 +31,6 @@ function lyrics_parser.extract_browse_id(next_data)
                             or rend.title == "歌词" or rend.title == "Lyrics"
 
       if is_lyrics_tab then
-        -- 如果歌词标签被 YouTube 显式标记为 unselectable，说明是纯音乐或官方未提供歌词
         if rend.unselectable == true then
           return nil, true
         end
@@ -44,15 +43,14 @@ function lyrics_parser.extract_browse_id(next_data)
 end
 
 --- 解析 /browse 返回的歌词 JSON
--- 优先解析 Android 官方毫秒级精准时间戳 (timedLyricsData)
--- 若仅有静态文本，则回退解析 Web 描述框 (musicDescriptionShelfRenderer)
+-- 返回: results (table), has_precise_cues (boolean)
 function lyrics_parser.parse_lyrics(browse_data)
   if not browse_data or type(browse_data) ~= "table" then
-    return {}
+    return {}, false
   end
 
   -- ==========================================================
-  -- 分支 1: 毫秒级精准时间戳歌词 (ANDROID_MUSIC timedLyricsData)
+  -- 分支 1: 毫秒级时间戳歌词 (ANDROID_MUSIC timedLyricsData)
   -- ==========================================================
   local timed_model = nav.nav(browse_data, constants.PATHS.TIMESTAMPED_LYRICS)
   local timed_items = timed_model and timed_model.timedLyricsData
@@ -62,6 +60,7 @@ function lyrics_parser.parse_lyrics(browse_data)
     local lrc_rows = {}
     local current_stepped_ms = 0
     local step_ms = 4000
+    local has_cues = false
 
     for _, item in ipairs(timed_items) do
       local line_text = nav.trim_str(item.lyricLine or "")
@@ -69,6 +68,7 @@ function lyrics_parser.parse_lyrics(browse_data)
       local start_ms = nil
       if cue and cue.startTimeMilliseconds then
         start_ms = tonumber(cue.startTimeMilliseconds)
+        has_cues = true
       end
 
       if not start_ms then
@@ -95,7 +95,7 @@ function lyrics_parser.parse_lyrics(browse_data)
           synced = true,
           lrc = table.concat(lrc_rows, "\n")
         }
-      }
+      }, has_cues
     end
   end
 
@@ -130,10 +130,9 @@ function lyrics_parser.parse_lyrics(browse_data)
   end
 
   if string.len(raw_text) == 0 then
-    return {}
+    return {}, false
   end
 
-  -- 静态歌词按行生成平滑时间戳，确保 Lazer 正则匹配不丢失
   local lines = {}
   local lrc_rows = {}
   local step_ms = 4000
@@ -153,7 +152,7 @@ function lyrics_parser.parse_lyrics(browse_data)
   end
 
   if #lines == 0 then
-    return {}
+    return {}, false
   end
 
   if string.len(footer_text) > 0 then
@@ -171,7 +170,7 @@ function lyrics_parser.parse_lyrics(browse_data)
       synced = true,
       lrc = table.concat(lrc_rows, "\n")
     }
-  }
+  }, false
 end
 
 return lyrics_parser
