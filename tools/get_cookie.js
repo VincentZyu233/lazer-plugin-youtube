@@ -337,7 +337,13 @@ async function runBrowserMode(options, autoQuit = false) {
 
         if (autoQuit) {
           console.log(`🚪 正在自动关闭浏览器窗口…`);
-          try { browserProcess.kill(); } catch (_) {}
+          try {
+            if (process.platform === 'win32') {
+              exec(`taskkill /F /T /PID ${browserProcess.pid}`, { windowsHide: true });
+            } else {
+              process.kill(-browserProcess.pid, 'SIGTERM');
+            }
+          } catch (_) {}
           try { fs.rmSync(tempProfileDir, { recursive: true, force: true }); } catch (_) {}
           process.exit(0);
         } else {
@@ -351,7 +357,13 @@ async function runBrowserMode(options, autoQuit = false) {
 
   if (!cookieFound) {
     console.error(`\n❌ 等待超时 (${options.timeout}秒)。未检测到登录完成，请重新运行工具。`);
-    try { browserProcess.kill(); } catch (_) {}
+    try {
+      if (process.platform === 'win32') {
+        exec(`taskkill /F /T /PID ${browserProcess.pid}`, { windowsHide: true });
+      } else {
+        process.kill(-browserProcess.pid, 'SIGTERM');
+      }
+    } catch (_) {}
     process.exit(1);
   }
 }
@@ -506,8 +518,15 @@ async function runDeviceFlowMode(mode = 3) {
   }
 
   function cleanup() {
-    if (browserProcess) {
-      try { browserProcess.kill(); } catch (_) {}
+    if (browserProcess && browserProcess.pid) {
+      try {
+        if (process.platform === 'win32') {
+          // Windows 上必须用 taskkill 杀掉整个 Chrome 进程树
+          exec(`taskkill /F /T /PID ${browserProcess.pid}`, { windowsHide: true });
+        } else {
+          process.kill(-browserProcess.pid, 'SIGTERM');
+        }
+      } catch (_) {}
     }
     if (tempHtmlPath) {
       try { fs.unlinkSync(tempHtmlPath); } catch (_) {}
