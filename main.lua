@@ -1,8 +1,23 @@
+-- Lazer YouTube & YouTube Music Plugin (v0.1.0)
+-- 架构设计参考 ytmusicapi：Parsers (纯数据清洗) / Services (网络与业务编排) / Core (通信底座)
+
 local account = require("ytm.account")
-local catalog = require("ytm.catalog")
-local stream = require("ytm.stream")
+local catalog = require("ytm.services.catalog")
+local lyrics = require("ytm.services.lyrics")
+local stream = require("ytm.services.stream")
+local discover = require("ytm.services.discover")
 
 local plugin = {}
+
+local CAPABILITIES = {
+  "search",
+  "lyrics",
+  "homeFeed",
+  "charts",
+  "radio",
+  "recommendations",
+  "favorites"
+}
 
 function plugin.call(operation, args)
   args = args or {}
@@ -15,14 +30,7 @@ function plugin.call(operation, args)
           id = "youtube",
           name = "YouTube Music",
           auth = { "cookie" },
-          capabilities = {
-            "search",
-            "lyrics",
-            "homeFeed",
-            "radio",
-            "recommendations",
-            "favorites"
-          },
+          capabilities = CAPABILITIES,
           loginHint = "在浏览器中打开 music.youtube.com，复制网络请求中的 Cookie 粘贴到下方即可登录",
           cookieHint = "支持包含 SID, HSID, SSID, SAPISID 的 Cookie 字符串"
         }
@@ -51,11 +59,15 @@ function plugin.call(operation, args)
     return catalog.song(song_id)
   elseif operation == "lyrics" then
     local song_id = args.id or args.songId or ""
-    return catalog.lyrics(song_id)
+    return lyrics.get_lyrics(song_id)
   elseif operation == "favorites" then
     return catalog.favorites(args)
-  elseif operation == "homeFeed" then
-    return { sections = {} }
+  elseif operation == "homeFeed" or operation == "recommendations" then
+    return discover.home_feed()
+  elseif operation == "charts" then
+    return discover.charts()
+  elseif operation == "radio" then
+    return discover.radio(args)
   end
 
   return nil

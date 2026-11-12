@@ -16,6 +16,14 @@ CLIENT_WEB_REMIX = {
     "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
 }
 
+CLIENT_ANDROID_MUSIC = {
+    "clientName": "ANDROID_MUSIC",
+    "clientVersion": "7.21.50",
+    "hl": "zh-CN",
+    "gl": "US",
+    "userAgent": "com.google.android.apps.youtube.music/7.21.50 (Linux; U; Android 14; en_US; Pixel 8 Pro)"
+}
+
 CLIENT_VISIONOS = {
     "clientName": "VISIONOS",
     "clientVersion": "1.02",
