@@ -68,20 +68,10 @@ function catalog.search(args)
     return { songs = {}, albums = {}, artists = {}, playlists = {} }
   end
 
-  -- 特性 1：如果输入的是直接视频 ID 或 URL，直接包装为单曲返回
   local direct_id = try_extract_video_id(query)
   if direct_id then
     return {
-      songs = {
-        {
-          id = direct_id,
-          title = "YouTube Video (" .. direct_id .. ")",
-          artists = { { id = "yt_channel", name = "YouTube", coverUrl = "" } },
-          albumName = "YouTube Audio",
-          coverUrl = "https://i.ytimg.com/vi/" .. direct_id .. "/hqdefault.jpg",
-          durationMs = 0
-        }
-      },
+      songs = { catalog.song(direct_id) },
       albums = {},
       artists = {},
       playlists = {}
@@ -98,7 +88,7 @@ function catalog.search(args)
   local seen_artists = {}
   local seen_playlists = {}
 
-  local top_artist_name = "YouTube Music"
+  local top_artist_name = query
   local top_artist_id = ""
   local top_artist_avatar = ""
 
@@ -153,32 +143,55 @@ function catalog.search(args)
         title = extract_text(cols[1].musicResponsiveListItemFlexColumnRenderer.text)
       end
 
-      local col1_runs = (cols[2] and cols[2].musicResponsiveListItemFlexColumnRenderer and cols[2].musicResponsiveListItemFlexColumnRenderer.text and cols[2].musicResponsiveListItemFlexColumnRenderer.text.runs) or {}
+      -- 遍历所有的 flexColumns 提取文本块
+      local all_runs = {}
+      for c_idx = 2, #cols do
+        local col_rend = cols[c_idx].musicResponsiveListItemFlexColumnRenderer
+        if col_rend and col_rend.text and col_rend.text.runs then
+          for _, r in ipairs(col_rend.text.runs) do
+            table.insert(all_runs, r)
+          end
+        end
+      end
 
       local dur_ms = 0
-      local artist_name = top_artist_name
+      local artist_name = nil
       local year = 0
 
-      for _, r in ipairs(col1_runs) do
+      for _, r in ipairs(all_runs) do
         local t = r.text or ""
-        local min, sec_part = string.match(t, "(%d+):(%d+)")
+        -- 精确识别时长，如 "4:48", "03:28"
+        local min, sec_part = string.match(t, "^%s*(%d+):(%d+)%s*$")
+        if not min then
+          min, sec_part = string.match(t, "(%d+):(%d+)")
+        end
         if min and sec_part then
           dur_ms = ((tonumber(min) or 0) * 60 + (tonumber(sec_part) or 0)) * 1000
         end
+
         local y = string.match(t, "(%d%d%d%d)年?")
         if y then
           year = tonumber(y) or 0
         end
       end
 
-      -- 提取歌手名字候选
-      for _, r in ipairs(col1_runs) do
+      -- 提取歌手名字（排除时长、数字、符号、类型标签）
+      for _, r in ipairs(all_runs) do
         local t = r.text or ""
-        local is_skip = (t == "歌曲" or t == "视频" or t == "专辑" or t == "播放列表" or t == "单曲" or t == "个人资料" or t == "音乐人" or t == " • " or t == "•")
-        if not is_skip and not string.match(t, "%d+:%d+") and not string.find(t, "观看") and not string.find(t, "听众") and not string.find(t, "订阅者") and not string.match(t, "^%d%d%d%d") then
-          artist_name = t
+        local trimmed = string.gsub(t, "^%s*(.-)%s*$", "%1")
+        local is_time = string.find(trimmed, ":") ~= nil
+        local is_tag = (trimmed == "歌曲" or trimmed == "视频" or trimmed == "专辑" or trimmed == "播放列表" or trimmed == "单曲" or trimmed == "个人资料" or trimmed == "音乐人" or trimmed == "•" or trimmed == "·" or trimmed == "")
+        local is_num = string.match(trimmed, "^%d+$") ~= nil
+        local is_stat = string.find(trimmed, "播放") or string.find(trimmed, "观看") or string.find(trimmed, "听众") or string.find(trimmed, "订阅") or string.find(trimmed, "次")
+
+        if not is_time and not is_tag and not is_num and not is_stat then
+          artist_name = trimmed
           break
         end
+      end
+
+      if not artist_name or string.len(artist_name) == 0 then
+        artist_name = top_artist_name
       end
 
       -- 提取最高清封面
@@ -259,14 +272,47 @@ function catalog.search(args)
   }
 end
 
+--- 获取单曲真实元数据，包括标题、创作者、时长和封面
 function catalog.song(id)
+  local vid = tostring(id or "")
+  if string.len(vid) == 0 then
+    error("Invalid song id", 0)
+  end
+
+  client.ensure_visitor_data()
+
+  local payload = {
+    videoId = vid,
+    playbackContext = {
+      contentPlaybackContext = {
+        html5Preference = "HTML5_PREF_WANTS"
+      }
+    }
+  }
+
+  local res = client.post_youtube("player?prettyPrint=false", payload, config.CLIENT_VISIONOS)
+  local vd = (res and res.videoDetails) or {}
+  local dur_s = tonumber(vd.lengthSeconds) or 0
+  local title = (vd.title and string.len(vd.title) > 0) and vd.title or ("YouTube Song (" .. vid .. ")")
+  local author = (vd.author and string.len(vd.author) > 0) and vd.author or "YouTube Music"
+
+  local cover_url = ""
+  if vd.thumbnail and vd.thumbnail.thumbnails and #vd.thumbnail.thumbnails > 0 then
+    cover_url = extract_thumbnail(vd.thumbnail.thumbnails)
+  end
+  if string.len(cover_url) == 0 then
+    cover_url = "https://i.ytimg.com/vi/" .. vid .. "/hqdefault.jpg"
+  end
+
   return {
-    id = id,
-    title = "YouTube Video (" .. tostring(id) .. ")",
-    artists = { { id = "yt_channel", name = "YouTube", coverUrl = "" } },
-    albumName = "YouTube Audio",
-    coverUrl = "https://i.ytimg.com/vi/" .. tostring(id) .. "/hqdefault.jpg",
-    durationMs = 0
+    id = vid,
+    title = title,
+    artists = {
+      { id = "yt_artist_" .. vid, name = author, coverUrl = "" }
+    },
+    albumName = "YouTube Music",
+    coverUrl = cover_url,
+    durationMs = dur_s * 1000
   }
 end
 

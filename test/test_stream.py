@@ -58,8 +58,19 @@ def test_stream(video_id: str = "7MkUDkzsge0"):
     print(f"Direct unencrypted audio formats found: {len(direct_audios)}")
     assert len(direct_audios) > 0, "No unencrypted direct audio stream found!"
 
-    # 挑选最高码率
-    best = max(direct_audios, key=lambda x: x.get("bitrate", 0))
+    # 优先挑选 M4A/AAC (itag 140)，次选 WebM
+    best_m4a = None
+    best_other = None
+    for f in direct_audios:
+        mime = f.get("mimeType", "")
+        br = f.get("bitrate", 0)
+        if "mp4" in mime or "m4a" in mime:
+            if not best_m4a or br > best_m4a.get("bitrate", 0):
+                best_m4a = f
+        else:
+            if not best_other or br > best_other.get("bitrate", 0):
+                best_other = f
+    best = best_m4a or best_other
     bitrate = best.get("bitrate", 0)
     itag = best.get("itag")
     mime = best.get("mimeType", "")
@@ -75,7 +86,6 @@ def test_stream(video_id: str = "7MkUDkzsge0"):
         stream_url,
         headers={
             "User-Agent": CLIENT_VISIONOS["userAgent"],
-            "Origin": "https://www.youtube.com",
             "Range": "bytes=0-1023"
         }
     )
@@ -103,8 +113,7 @@ def test_stream(video_id: str = "7MkUDkzsge0"):
         "contentType": mime,
         "transcoded": False,
         "headers": {
-            "User-Agent": CLIENT_VISIONOS["userAgent"],
-            "Origin": "https://www.youtube.com"
+            "User-Agent": CLIENT_VISIONOS["userAgent"]
         }
     }
     print("\nLazer MusicStream Contract verification:")

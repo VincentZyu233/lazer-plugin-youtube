@@ -3,7 +3,7 @@ local config = require("yt.config")
 local stream = {}
 
 --- 获取指定 videoId 的音频直链
---- 采用 VisionOS 客户端与 Visitor 会话签名，直出无加密 Opus/AAC 直链
+--- 优先选用 M4A (AAC itag 140)，其头部含完整 moov/mvhd 索引，完美支持流式解码与时钟推进
 function stream.get_audio_url(video_id, target_quality)
   if not video_id or type(video_id) ~= "string" or string.len(video_id) == 0 then
     error("Invalid videoId", 0)
@@ -81,8 +81,8 @@ function stream.get_audio_url(video_id, target_quality)
   end
 
   local formats = streaming_data.adaptiveFormats or {}
-  local best_audio = nil
-  local best_bitrate = 0
+  local best_m4a = nil
+  local best_other = nil
 
   for _, fmt in ipairs(formats) do
     local mime = fmt.mimeType or ""
@@ -91,34 +91,42 @@ function stream.get_audio_url(video_id, target_quality)
       local bitrate = fmt.bitrate or 0
 
       if audio_url and string.len(audio_url) > 0 then
-        if bitrate > best_bitrate then
-          best_bitrate = bitrate
-          best_audio = fmt
+        if string.find(mime, "mp4") or string.find(mime, "m4a") then
+          if not best_m4a or bitrate > (best_m4a.bitrate or 0) then
+            best_m4a = fmt
+          end
+        else
+          if not best_other or bitrate > (best_other.bitrate or 0) then
+            best_other = fmt
+          end
         end
       end
     end
   end
 
+  -- 首选 M4A/AAC，保障客户端播放器时间戳与时钟正常推进；无 M4A 时回退到 WebM
+  local best_audio = best_m4a or best_other
   if not best_audio or not best_audio.url then
     error("No unencrypted direct audio stream found for video: " .. video_id, 0)
   end
 
-  local mime = best_audio.mimeType or "audio/webm"
-  local suffix = "webm"
-  if string.find(mime, "mp4") or string.find(mime, "m4a") then
-    suffix = "m4a"
+  local mime = best_audio.mimeType or "audio/mp4"
+  local suffix = "m4a"
+  if string.find(mime, "webm") or string.find(mime, "opus") then
+    suffix = "webm"
   end
 
-  -- 对齐 Lazer 宿主 MusicStream 契约字段
+  local reported_size = tonumber(best_audio.contentLength)
+
   return {
     url = best_audio.url,
     bitRate = best_audio.bitrate or 128000,
     suffix = suffix,
     contentType = mime,
+    size = reported_size,
     transcoded = false,
     headers = {
-      ["User-Agent"] = ua,
-      ["Origin"] = "https://www.youtube.com"
+      ["User-Agent"] = ua
     }
   }
 end
