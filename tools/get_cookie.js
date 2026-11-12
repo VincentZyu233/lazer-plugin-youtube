@@ -5,8 +5,9 @@
  * 功能：
  * 1. 自动寻找系统内置的 Chrome / Edge / Brave / Chromium 浏览器（支持 Win / Mac / Linux）；
  * 2. 也支持通过 -p / --browser-path 指定自定义浏览器路径；
- * 3. 启动隔离的临时浏览器窗口打开 music.youtube.com，用户手动完成 Google 账号登录；
- * 4. 通过 CDP 协议自动轮询检测登录态，获取完整 Cookie 并高亮打印到控制台，自动复制到剪贴板。
+ * 3. 启动独立的浏览器窗口打开 music.youtube.com，用户手动完成 Google 账号登录；
+ * 4. 通过 CDP 协议自动轮询检测登录态，获取完整 Cookie 并高亮打印到控制台，自动复制到剪贴板；
+ * 5. 默认保持浏览器开启供用户听歌对照；如需抓取完自动退出浏览器，可指定 -q / --quit 参数。
  * 
  * 依赖：Node.js >= 20.0 (纯原生标准库，0 第三方 npm 依赖)
  */
@@ -26,6 +27,7 @@ function parseArgs() {
     port: 0,
     url: 'https://music.youtube.com',
     timeout: 300, // 5 分钟超时
+    quit: false,  // 默认不退出浏览器，除非指定 -q / --quit
     help: false
   };
 
@@ -39,6 +41,8 @@ function parseArgs() {
       options.url = args[++i];
     } else if (arg === '--timeout') {
       options.timeout = parseInt(args[++i], 10);
+    } else if (arg === '-q' || arg === '--quit') {
+      options.quit = true;
     } else if (arg === '-h' || arg === '--help') {
       options.help = true;
     }
@@ -63,7 +67,7 @@ function findFreePort(preferredPort = 9222) {
   });
 }
 
-// 跨平台预设浏览器路径列表
+// 智能查找系统中常见的浏览器路径
 function getCandidateBrowserPaths() {
   const platform = process.platform;
   const candidates = [];
@@ -74,7 +78,7 @@ function getCandidateBrowserPaths() {
     const progFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
 
     candidates.push(
-      // Google Chrome
+      // Google Chrome (首选日常浏览器)
       path.join(progFiles, 'Google\\Chrome\\Application\\chrome.exe'),
       path.join(progFilesX86, 'Google\\Chrome\\Application\\chrome.exe'),
       path.join(localAppData, 'Google\\Chrome\\Application\\chrome.exe'),
@@ -159,33 +163,61 @@ function copyToClipboard(text) {
           proc.stdin.write(text);
           proc.stdin.end();
         } else if (!err && stdout.includes('xsel')) {
-          const proc = spawn('xsel', ['-b'], { stdio: ['pipe', 'ignore', 'ignore'] });
+          const proc = spawn('xsel', ['-b', '-i'], { stdio: ['pipe', 'ignore', 'ignore'] });
           proc.stdin.write(text);
           proc.stdin.end();
         }
       });
       return true;
     }
-  } catch (_) {
-    // 复制失败不影响终端打印
-  }
+  } catch (_) {}
   return false;
 }
 
-// HTTP JSON 请求封装
-function fetchJson(url) {
-  return new Promise((resolve, reject) => {
-    http.get(url, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
+// 清理历史残留的无锁临时会话目录
+function cleanOldTempDirs() {
+  try {
+    const tmp = os.tmpdir();
+    const entries = fs.readdirSync(tmp);
+    for (const e of entries) {
+      if (e.startsWith('lazer_yt_profile_')) {
+        const full = path.join(tmp, e);
         try {
-          resolve(JSON.parse(data));
-        } catch (e) {
-          reject(e);
-        }
-      });
-    }).on('error', reject);
+          fs.rmSync(full, { recursive: true, force: true });
+        } catch (_) {}
+      }
+    }
+  } catch (_) {}
+}
+
+// 轮询等待 CDP 调试端口就绪
+function waitForCdpTargets(port, timeoutSeconds = 15) {
+  const startTime = Date.now();
+  return new Promise((resolve, reject) => {
+    const interval = setInterval(() => {
+      if (Date.now() - startTime > timeoutSeconds * 1000) {
+        clearInterval(interval);
+        reject(new Error('等待浏览器调试接口响应超时'));
+        return;
+      }
+
+      http.get(`http://127.0.0.1:${port}/json`, (res) => {
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => {
+          try {
+            const targets = JSON.parse(body);
+            if (Array.isArray(targets) && targets.length > 0) {
+              const pageTarget = targets.find(t => t.type === 'page') || targets[0];
+              if (pageTarget && pageTarget.webSocketDebuggerUrl) {
+                clearInterval(interval);
+                resolve(pageTarget.webSocketDebuggerUrl);
+              }
+            }
+          } catch (_) {}
+        });
+      }).on('error', () => {});
+    }, 500);
   });
 }
 
@@ -204,6 +236,7 @@ Lazer YouTube Music Cookie 抓取工具
   --port <port>               指定 CDP 远程调试端口 (默认自动分配空闲端口，如 9222)
   --url <url>                 指定打开的登录页面 (默认: https://music.youtube.com)
   --timeout <seconds>         登录等待超时时间 (默认: 300 秒)
+  -q, --quit                  登录成功并提取 Cookie 后自动关闭浏览器 (默认保持浏览器开启供您听歌与对照)
   -h, --help                  显示帮助信息
 `);
     process.exit(0);
@@ -212,6 +245,9 @@ Lazer YouTube Music Cookie 抓取工具
   console.log('================================================================');
   console.log('       Lazer YouTube Music 登录与 Cookie 自动抓取工具           ');
   console.log('================================================================\n');
+
+  // 尝试做一次历史无锁临时目录整理
+  cleanOldTempDirs();
 
   const browserPath = resolveBrowser(options.browserPath);
   console.log(`[1/4] 找到可用浏览器: ${browserPath}`);
@@ -237,57 +273,47 @@ Lazer YouTube Music Cookie 抓取工具
     stdio: 'ignore'
   });
 
+  let shouldQuitBrowser = options.quit;
   let cleanedUp = false;
+
   function cleanup() {
     if (cleanedUp) return;
     cleanedUp = true;
-    try {
-      if (browserProc && !browserProc.killed) {
-        browserProc.kill();
-      }
-    } catch (_) {}
-    try {
-      fs.rmSync(tempDir, { recursive: true, force: true });
-    } catch (_) {}
+    if (shouldQuitBrowser) {
+      try {
+        if (browserProc && !browserProc.killed) {
+          browserProc.kill();
+        }
+      } catch (_) {}
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      } catch (_) {}
+    }
   }
 
   process.on('SIGINT', () => {
-    console.log('\n\n检测到用户中断，正在退出并清理临时会话…');
+    console.log('\n\n检测到用户中断，正在退出…');
     cleanup();
     process.exit(0);
   });
 
   process.on('exit', cleanup);
 
-  // 1. 等待 CDP 端口就绪
   let wsUrl = null;
-  const startWait = Date.now();
-  while (Date.now() - startWait < 15000) {
-    try {
-      const targets = await fetchJson(`http://127.0.0.1:${port}/json`);
-      if (Array.isArray(targets) && targets.length > 0) {
-        const page = targets.find(t => t.type === 'page') || targets[0];
-        if (page && page.webSocketDebuggerUrl) {
-          wsUrl = page.webSocketDebuggerUrl;
-          break;
-        }
-      }
-    } catch (_) {}
-    await new Promise(r => setTimeout(r, 600));
-  }
-
-  if (!wsUrl) {
+  try {
+    wsUrl = await waitForCdpTargets(port, 15);
+  } catch (err) {
+    shouldQuitBrowser = true;
     cleanup();
-    console.error('❌ 连接浏览器调试端口超时，请重试或更换浏览器。');
+    console.error(`\n❌ 连接浏览器调试端口失败: ${err.message}。请重试或指定其他浏览器。`);
     process.exit(1);
   }
 
-  // 2. 建立 WebSocket CDP 监听
   console.log('[4/4] 正在监听登录状态，请在浏览器中完成登录…\n');
 
+  // 连接 CDP WebSocket
   if (typeof WebSocket === 'undefined') {
-    cleanup();
-    console.error('❌ 当前 Node.js 版本不支持原生 WebSocket，请使用 Node.js >= 20 或运行 python tools/get_cookie.py');
+    console.error('❌ 当前 Node.js 版本不支持原生 WebSocket，请升级至 Node.js >= 20.0');
     process.exit(1);
   }
 
@@ -369,15 +395,21 @@ Lazer YouTube Music Cookie 抓取工具
   const cookieResult = await cookiePromise;
   clearInterval(pollTimer);
 
-  // 优雅关闭浏览器会话，避免强杀进程导致服务端会话握手被废弃 (SIDCC=EXPIRED)
-  try {
-    ws.send(JSON.stringify({ id: reqId++, method: 'Browser.close' }));
-  } catch (_) {}
-  try { ws.close(); } catch (_) {}
-
-  // 稍作缓冲等待进程正常落地
-  await new Promise((r) => setTimeout(r, 1200));
-  cleanup();
+  if (options.quit) {
+    // 优雅关闭浏览器会话，避免强杀进程导致服务端会话握手被废弃 (SIDCC=EXPIRED)
+    try {
+      ws.send(JSON.stringify({ id: reqId++, method: 'Browser.close' }));
+    } catch (_) {}
+    try { ws.close(); } catch (_) {}
+    await new Promise((r) => setTimeout(r, 1200));
+    cleanup();
+  } else {
+    // 默认保持浏览器开启，让用户听歌与对照
+    try { ws.close(); } catch (_) {}
+    if (browserProc && browserProc.unref) {
+      browserProc.unref();
+    }
+  }
 
   if (!cookieResult) {
     console.log('\n❌ 登录超时，未检测到完整的账号 Cookie。请重新运行重试。');
@@ -400,7 +432,15 @@ Lazer YouTube Music Cookie 抓取工具
     console.log('💡 提示：请完整选中并复制上方虚线框内的 Cookie 字符串。');
   }
   console.log('👉 下一步：打开 Lazer 客户端 -> 点击「登录」-> 选择 YouTube Music -> 粘贴并点击登录即可！\n');
+
+  if (options.quit) {
+    console.log('🚪 浏览器已自动关闭。\n');
+  } else {
+    console.log('🎵 浏览器窗口已为您保留，您可以继续在浏览器中听歌并与 Lazer 进行对照！');
+    console.log('💡 提示：若希望抓取后自动退出浏览器，可附加 -q 或 --quit 参数。\n');
+  }
   console.log('================================================================================\n');
+
   process.exit(0);
 }
 
