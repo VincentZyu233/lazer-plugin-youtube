@@ -2,10 +2,10 @@ local auth = {}
 
 --- 32 位循环左移
 local function rol(val, n)
-  return (((val << n) | (val >> (32 - n))) & 0xFFFFFFFF)
+  return (((val << n) | (val >> (32 - n))) & 4294967295)
 end
 
---- 纯 Lua 实现的标准 SHA-1 哈希算法 (适用于 Lua 5.3+ 及 Lazer 沙箱)
+--- 纯 Lua 实现的标准 SHA-1 哈希算法 (完全避免 0x 十六进制字面量以兼容 Dart lua_dardo 解释器)
 function auth.sha1(msg)
   if not msg then return "" end
   msg = tostring(msg)
@@ -18,8 +18,8 @@ function auth.sha1(msg)
   local len = #bytes
   local bit_len = len * 8
 
-  -- 追加填充位 0x80
-  bytes[#bytes + 1] = 0x80
+  -- 追加填充位 128 (0x80)
+  bytes[#bytes + 1] = 128
 
   -- 填充 0 使得长度在模 64 下余 56 字节
   while (#bytes % 64) ~= 56 do
@@ -28,16 +28,16 @@ function auth.sha1(msg)
 
   -- 追加 64 位大端格式的原始长度
   for i = 7, 0, -1 do
-    bytes[#bytes + 1] = ((bit_len >> (i * 8)) & 0xFF)
+    bytes[#bytes + 1] = ((bit_len >> (i * 8)) & 255)
   end
 
-  local h0 = 0x67452301
-  local h1 = 0xEFCDAB89
-  local h2 = 0x98BADCFE
-  local h3 = 0x10325476
-  local h4 = 0xC3D2E1F0
+  local h0 = 1732584193 -- 0x67452301
+  local h1 = 4023233417 -- 0xEFCDAB89
+  local h2 = 2562383102 -- 0x98BADCFE
+  local h3 = 271733878  -- 0x10325476
+  local h4 = 3285377520 -- 0xC3D2E1F0
 
-  local num_chunks = #bytes // 64
+  local num_chunks = math.floor(#bytes / 64)
   for chunk = 0, num_chunks - 1 do
     local offset = chunk * 64
     local w = {}
@@ -56,19 +56,19 @@ function auth.sha1(msg)
       local f, k
       if i <= 19 then
         f = (b & c) | ((~b) & d)
-        k = 0x5A827999
+        k = 1518500249 -- 0x5A827999
       elseif i <= 39 then
         f = b ~ c ~ d
-        k = 0x6ED9EBA1
+        k = 1859775393 -- 0x6ED9EBA1
       elseif i <= 59 then
         f = (b & c) | (b & d) | (c & d)
-        k = 0x8F1BBCDC
+        k = 2400959708 -- 0x8F1BBCDC
       else
         f = b ~ c ~ d
-        k = 0xCA62C1D6
+        k = 3395469782 -- 0xCA62C1D6
       end
 
-      local temp = (rol(a, 5) + f + e + k + w[i]) & 0xFFFFFFFF
+      local temp = (rol(a, 5) + f + e + k + w[i]) & 4294967295
       e = d
       d = c
       c = rol(b, 30)
@@ -76,11 +76,11 @@ function auth.sha1(msg)
       a = temp
     end
 
-    h0 = (h0 + a) & 0xFFFFFFFF
-    h1 = (h1 + b) & 0xFFFFFFFF
-    h2 = (h2 + c) & 0xFFFFFFFF
-    h3 = (h3 + d) & 0xFFFFFFFF
-    h4 = (h4 + e) & 0xFFFFFFFF
+    h0 = (h0 + a) & 4294967295
+    h1 = (h1 + b) & 4294967295
+    h2 = (h2 + c) & 4294967295
+    h3 = (h3 + d) & 4294967295
+    h4 = (h4 + e) & 4294967295
   end
 
   return string.format("%08x%08x%08x%08x%08x", h0, h1, h2, h3, h4)
