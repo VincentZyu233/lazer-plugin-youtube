@@ -1,5 +1,5 @@
-local config = require("yt.config")
-local auth = require("yt.auth")
+local config = require("ytm.config")
+local auth = require("ytm.auth")
 local client = {}
 
 local memory_visitor_data = nil

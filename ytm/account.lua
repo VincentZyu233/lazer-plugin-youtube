@@ -1,5 +1,5 @@
-local config = require("yt.config")
-local auth = require("yt.auth")
+local config = require("ytm.config")
+local auth = require("ytm.auth")
 local account = {}
 
 --- 从 account_menu 的响应中提取当前登录账号的用户昵称与头像

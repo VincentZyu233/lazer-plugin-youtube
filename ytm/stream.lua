@@ -1,5 +1,5 @@
-local client = require("yt.client")
-local config = require("yt.config")
+local client = require("ytm.client")
+local config = require("ytm.config")
 local stream = {}
 
 --- 获取指定 videoId 的音频直链

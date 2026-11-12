@@ -1,6 +1,6 @@
-local account = require("yt.account")
-local catalog = require("yt.catalog")
-local stream = require("yt.stream")
+local account = require("ytm.account")
+local catalog = require("ytm.catalog")
+local stream = require("ytm.stream")
 
 local plugin = {}
 
