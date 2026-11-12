@@ -46,14 +46,14 @@ def get_candidate_browser_paths() -> List[str]:
         prog_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
 
         candidates.extend([
-            # Microsoft Edge
-            os.path.join(prog_files_x86, r"Microsoft\Edge\Application\msedge.exe"),
-            os.path.join(prog_files, r"Microsoft\Edge\Application\msedge.exe"),
-            os.path.join(local_app_data, r"Microsoft\Edge\Application\msedge.exe"),
             # Google Chrome
             os.path.join(prog_files, r"Google\Chrome\Application\chrome.exe"),
             os.path.join(prog_files_x86, r"Google\Chrome\Application\chrome.exe"),
             os.path.join(local_app_data, r"Google\Chrome\Application\chrome.exe"),
+            # Microsoft Edge
+            os.path.join(prog_files, r"Microsoft\Edge\Application\msedge.exe"),
+            os.path.join(prog_files_x86, r"Microsoft\Edge\Application\msedge.exe"),
+            os.path.join(local_app_data, r"Microsoft\Edge\Application\msedge.exe"),
             # Brave
             os.path.join(prog_files, r"BraveSoftware\Brave-Browser\Application\brave.exe"),
             os.path.join(prog_files_x86, r"BraveSoftware\Brave-Browser\Application\brave.exe"),
@@ -184,10 +184,7 @@ async def monitor_cdp(ws_url: str, timeout: int) -> Optional[str]:
                 "method": "Network.getCookies",
                 "params": {
                     "urls": [
-                        "https://music.youtube.com",
-                        "https://youtube.com",
-                        "https://accounts.google.com",
-                        "https://google.com"
+                        "https://music.youtube.com"
                     ]
                 }
             }))

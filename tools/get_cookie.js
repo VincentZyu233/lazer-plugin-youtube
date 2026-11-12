@@ -74,14 +74,14 @@ function getCandidateBrowserPaths() {
     const progFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
 
     candidates.push(
-      // Microsoft Edge
-      path.join(progFilesX86, 'Microsoft\\Edge\\Application\\msedge.exe'),
-      path.join(progFiles, 'Microsoft\\Edge\\Application\\msedge.exe'),
-      path.join(localAppData, 'Microsoft\\Edge\\Application\\msedge.exe'),
       // Google Chrome
       path.join(progFiles, 'Google\\Chrome\\Application\\chrome.exe'),
       path.join(progFilesX86, 'Google\\Chrome\\Application\\chrome.exe'),
       path.join(localAppData, 'Google\\Chrome\\Application\\chrome.exe'),
+      // Microsoft Edge
+      path.join(progFiles, 'Microsoft\\Edge\\Application\\msedge.exe'),
+      path.join(progFilesX86, 'Microsoft\\Edge\\Application\\msedge.exe'),
+      path.join(localAppData, 'Microsoft\\Edge\\Application\\msedge.exe'),
       // Brave
       path.join(progFiles, 'BraveSoftware\\Brave-Browser\\Application\\brave.exe'),
       path.join(progFilesX86, 'BraveSoftware\\Brave-Browser\\Application\\brave.exe'),
@@ -308,7 +308,7 @@ Lazer YouTube Music Cookie 抓取工具
   const startTime = Date.now();
   const timeoutMs = options.timeout * 1000;
 
-  // 定时发送 Network.getCookies
+  // 定时发送 Network.getCookies (严格仅获取针对 music.youtube.com 生效的凭据，防止 domain 冲突覆盖)
   const checkCookies = () => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
@@ -316,10 +316,7 @@ Lazer YouTube Music Cookie 抓取工具
         method: 'Network.getCookies',
         params: {
           urls: [
-            'https://music.youtube.com',
-            'https://youtube.com',
-            'https://accounts.google.com',
-            'https://google.com'
+            'https://music.youtube.com'
           ]
         }
       }));
@@ -345,7 +342,7 @@ Lazer YouTube Music Cookie 抓取工具
           const hasSid = cookieMap.has('SID') || cookieMap.has('__Secure-3PSID') || cookieMap.has('__Secure-1PSID');
 
           if (hasLoginInfo && (hasSapisid || hasSid)) {
-            // 组装格式化 Cookie 字符串
+            // 组装格式化 Cookie 字符串 (仅保留发往 music.youtube.com 的专属凭据)
             const cookiePairs = [];
             for (const [k, v] of cookieMap.entries()) {
               cookiePairs.push(`${k}=${v}`);
@@ -371,9 +368,15 @@ Lazer YouTube Music Cookie 抓取工具
 
   const cookieResult = await cookiePromise;
   clearInterval(pollTimer);
+
+  // 优雅关闭浏览器会话，避免强杀进程导致服务端会话握手被废弃 (SIDCC=EXPIRED)
+  try {
+    ws.send(JSON.stringify({ id: reqId++, method: 'Browser.close' }));
+  } catch (_) {}
   try { ws.close(); } catch (_) {}
 
-  // 登录完成或超时处理
+  // 稍作缓冲等待进程正常落地
+  await new Promise((r) => setTimeout(r, 1200));
   cleanup();
 
   if (!cookieResult) {
