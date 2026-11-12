@@ -209,6 +209,9 @@ async def monitor_cdp(ws_url: str, timeout: int) -> Optional[str]:
                     if has_login_info and (has_sapisid or has_sid):
                         pairs = [f"{k}={v}" for k, v in cookie_map.items()]
                         return "; ".join(pairs)
+                    elif has_sid or has_sapisid:
+                        sys.stdout.write("\r⏳ 检测到 Google 账号已登录，正在等待浏览器跳转回 YouTube Music 完成授权… (请稍候)")
+                        sys.stdout.flush()
             except asyncio.TimeoutError:
                 pass
 

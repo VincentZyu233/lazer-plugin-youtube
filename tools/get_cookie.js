@@ -326,6 +326,8 @@ Lazer YouTube Music Cookie 抓取工具
     }
   };
 
+  process.stdout.write('⏳ 等待登录授权中… (可在浏览器中输入账号密码或扫码)\r');
+
   const cookiePromise = new Promise((resolve) => {
     ws.onmessage = (event) => {
       try {
@@ -350,6 +352,8 @@ Lazer YouTube Music Cookie 抓取工具
             }
             resolvedCookie = cookiePairs.join('; ');
             resolve(resolvedCookie);
+          } else if (hasSid || hasSapisid) {
+            process.stdout.write('⏳ 检测到 Google 账号已登录，正在等待浏览器跳转回 YouTube Music 完成授权… (请稍候)\r');
           }
         }
       } catch (_) {}
@@ -361,7 +365,6 @@ Lazer YouTube Music Cookie 抓取工具
         resolve(null);
         return;
       }
-      process.stdout.write('⏳ 等待登录授权中… (可在浏览器中输入账号密码或扫码)\r');
       checkCookies();
     }, 1500);
   });

@@ -1,28 +1,65 @@
 local config = require("yt.config")
 local account = {}
 
+--- 从 account_menu 的响应中提取当前登录账号的用户昵称与头像
+local function extract_account_info(data)
+  if not data or type(data) ~= "table" then return nil end
+  local actions = data.actions
+  if not actions or type(actions) ~= "table" then return nil end
+
+  for _, act in ipairs(actions) do
+    local popup = act.openPopupAction and act.openPopupAction.popup
+    local menu = popup and popup.multiPageMenuRenderer
+    local header = menu and menu.header
+    local active = header and header.activeAccountHeaderRenderer
+    if active then
+      local name = nil
+      if active.accountName and active.accountName.runs and active.accountName.runs[1] then
+        name = active.accountName.runs[1].text
+      end
+
+      local avatar_url = nil
+      if active.accountPhoto and active.accountPhoto.thumbnails then
+        local thumbs = active.accountPhoto.thumbnails
+        if #thumbs > 0 and thumbs[#thumbs].url then
+          avatar_url = thumbs[#thumbs].url
+          if string.sub(avatar_url, 1, 2) == "//" then
+            avatar_url = "https:" .. avatar_url
+          end
+        end
+      end
+
+      local handle = nil
+      if active.channelHandle and active.channelHandle.runs and active.channelHandle.runs[1] then
+        handle = active.channelHandle.runs[1].text
+      end
+
+      return {
+        name = name,
+        avatarUrl = avatar_url,
+        handle = handle
+      }
+    end
+  end
+  return nil
+end
+
 --- 检查并返回当前已保存的会话
+-- 符合宿主 MusicUser _adopt 契约：登录有效时直接返回平铺对象，未登录时返回 nil
 function account.session()
   local saved_cookie = host.storage_get("user_cookie")
   if not saved_cookie or string.len(saved_cookie) == 0 then
-    -- 未登录时返回 guest 假会话，允许免登录播放
-    return {
-      valid = false,
-      user = nil
-    }
+    return nil
   end
 
   local saved_name = host.storage_get("user_name") or "YouTube User"
   local saved_avatar = host.storage_get("user_avatar") or "https://www.youtube.com/s/desktop/9906d203/img/favicon_144x144.png"
-  local saved_id = host.storage_get("user_id") or "yt_user"
+  local saved_id = host.storage_get("user_id") or "yt_authenticated"
 
   return {
-    valid = true,
-    user = {
-      id = saved_id,
-      name = saved_name,
-      avatar = saved_avatar
-    }
+    id = saved_id,
+    name = saved_name,
+    avatarUrl = saved_avatar
   }
 end
 
@@ -33,45 +70,60 @@ function account.login_cookie(args)
     error("Cookie 不能为空")
   end
 
-  -- 向 YouTube 发起一次携带该 Cookie 的轻量级验证请求
-  local res = host.http({
-    url = "https://www.youtube.com",
-    method = "GET",
-    headers = {
-      ["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-      ["Cookie"] = cookie_str
+  -- 向 YouTube Music account_menu 发起验证请求以获取真实用户名与头像
+  local payload = {
+    context = {
+      client = {
+        clientName = "WEB_REMIX",
+        clientVersion = "1.20261110.04.00",
+        hl = "zh-CN",
+        gl = "JP"
+      }
     }
+  }
+
+  local res = host.http({
+    url = "https://music.youtube.com/youtubei/v1/account/account_menu",
+    method = "POST",
+    headers = {
+      ["Content-Type"] = "application/json",
+      ["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+      ["Origin"] = config.HOST_MUSIC,
+      ["X-Origin"] = config.HOST_MUSIC,
+      ["X-Goog-Api-Format-Version"] = "2",
+      ["Cookie"] = cookie_str
+    },
+    body = host.json_encode(payload)
   })
 
   if not res or res.status ~= 200 then
-    error("网络连接失败，请检查代理是否正常开启")
+    error("网络连接失败，请检查代理是否正常开启 (HTTP " .. tostring(res and res.status or "nil") .. ")")
   end
 
-  -- 简单校验是否包含 Google 登录标识
-  -- 登录成功的页面中通常包含 LOGGED_IN = true 或 session_token
-  local body = res.body or ""
-  local is_logged_in = string.find(body, '"LOGGED_IN":true') or string.find(body, 'logged_in') or string.find(cookie_str, "SAPISID") or string.find(cookie_str, "SID=")
+  local ok, data = pcall(host.json_decode, res.body)
+  local info = ok and extract_account_info(data)
 
-  if not is_logged_in then
-    error("该 Cookie 无效或已过期，请重新在浏览器登录后复制")
+  -- 如果未能获取到账号专属卡片，提示用户 Cookie 是否完整
+  if not info then
+    if not string.find(cookie_str, "LOGIN_INFO") then
+      error("登录失败：检测到 Cookie 中缺少 YouTube 核心会话 (LOGIN_INFO)。请重新运行 tools/get_cookie.js，确保浏览器完全跳转回 YouTube Music 页面后再抓取！")
+    end
   end
 
-  -- 提取用户昵称
-  local user_name = string.match(body, '"title":"(.-)","navigationEndpoint"') or "YouTube User"
-  if string.len(user_name) > 30 then
-    user_name = "YouTube User"
-  end
+  local user_name = (info and info.name) or "YouTube User"
+  local user_avatar = (info and info.avatarUrl) or "https://www.youtube.com/s/desktop/9906d203/img/favicon_144x144.png"
+  local user_id = (info and info.handle) or "yt_authenticated"
 
   -- 持久化存储
   host.storage_set("user_cookie", cookie_str)
   host.storage_set("user_name", user_name)
-  host.storage_set("user_avatar", "https://www.youtube.com/s/desktop/9906d203/img/favicon_144x144.png")
-  host.storage_set("user_id", "yt_authenticated")
+  host.storage_set("user_avatar", user_avatar)
+  host.storage_set("user_id", user_id)
 
   return {
-    id = "yt_authenticated",
+    id = user_id,
     name = user_name,
-    avatar = "https://www.youtube.com/s/desktop/9906d203/img/favicon_144x144.png"
+    avatarUrl = user_avatar
   }
 end
 
