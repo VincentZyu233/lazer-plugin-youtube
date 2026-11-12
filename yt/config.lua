@@ -9,7 +9,8 @@ config.CLIENT_WEB_REMIX = {
   clientName = "WEB_REMIX",
   clientVersion = "1.20260707.12.00",
   hl = "zh-CN",
-  gl = "US"
+  gl = "US",
+  userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
 }
 
 -- InnerTube 播放流客户端（VisionOS，yt-dlp 官方验证：直出无加密直链，无需 JS 求解器）
