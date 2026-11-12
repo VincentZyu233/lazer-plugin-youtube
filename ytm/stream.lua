@@ -136,7 +136,11 @@ function stream.get_audio_url(video_id, target_quality)
   local stream_headers = {
     ["User-Agent"] = ua,
     ["Origin"] = "https://www.youtube.com",
-    ["Referer"] = "https://www.youtube.com/"
+    ["Referer"] = "https://www.youtube.com/",
+    ["Range"] = "bytes=0-",
+    ["Accept"] = "*/*",
+    ["Accept-Encoding"] = "identity",
+    ["Connection"] = "keep-alive"
   }
 
   local user_cookie = host.storage_get("user_cookie")

@@ -739,14 +739,27 @@ function catalog.lyrics(song_id)
     return {}
   end
 
-  -- 第 3 步：按换行切分为逐行歌词
+  -- 第 3 步：按换行切分为逐行歌词，并生成合规 LRC 时间戳
+  -- Lazer 的 parseLrc 正则要求每一行必须携带 [mm:ss.xxx] 标签，否则整行会被丢弃判定为纯音乐。
   local lines = {}
+  local lrc_rows = {}
+  local step_ms = 4000 -- 每行平滑间隔 4000ms
+  local current_ms = 0
+
   for line in string.gmatch(raw_text, "([^\r\n]+)") do
     local trimmed = trim_str(line)
     if string.len(trimmed) > 0 then
+      local min = math.floor(current_ms / 60000)
+      local sec = math.floor((current_ms % 60000) / 1000)
+      local msec = current_ms % 1000
+      local stamp = string.format("[%02d:%02d.%03d]", min, sec, msec)
+
       table.insert(lines, {
-        text = trimmed
+        text = trimmed,
+        startMs = current_ms
       })
+      table.insert(lrc_rows, stamp .. trimmed)
+      current_ms = current_ms + step_ms
     end
   end
 
@@ -755,19 +768,25 @@ function catalog.lyrics(song_id)
   end
 
   if string.len(footer_text) > 0 then
+    local min = math.floor(current_ms / 60000)
+    local sec = math.floor((current_ms % 60000) / 1000)
+    local msec = current_ms % 1000
+    local stamp = string.format("[%02d:%02d.%03d]", min, sec, msec)
+
     table.insert(lines, {
-      text = " "
+      text = footer_text,
+      startMs = current_ms
     })
-    table.insert(lines, {
-      text = footer_text
-    })
+    table.insert(lrc_rows, stamp .. footer_text)
   end
+
+  local formatted_lrc = table.concat(lrc_rows, "\n")
 
   return {
     {
       lines = lines,
-      synced = false,
-      lrc = raw_text
+      synced = true,
+      lrc = formatted_lrc
     }
   }
 end
