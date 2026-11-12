@@ -1,4 +1,5 @@
 import json
+import re
 from common import post_innertube, HOST_MUSIC, CLIENT_WEB_REMIX
 
 def test_search(query: str = "iyowa"):
@@ -8,60 +9,90 @@ def test_search(query: str = "iyowa"):
 
     url = f"{HOST_MUSIC}/youtubei/v1/search"
     payload = {
-        "query": query
+        "query": query,
+        "params": "EgWKAQIIAWoOEAUQCRADEAQQChAVEBA%3D"
     }
 
     data = post_innertube(url, payload, CLIENT_WEB_REMIX)
     visitor_data = data.get("responseContext", {}).get("visitorData")
     print(f"VisitorData captured: {visitor_data}")
 
-    # 解析 contents
-    contents = (
-        data.get("contents", {})
-        .get("tabbedSearchResultsRenderer", {})
-        .get("tabs", [{}])[0]
-        .get("tabRenderer", {})
-        .get("content", {})
-        .get("sectionListRenderer", {})
-        .get("contents", [])
-    )
+    items = []
+    def find_items(node):
+        if isinstance(node, dict):
+            if "musicResponsiveListItemRenderer" in node:
+                items.append(node["musicResponsiveListItemRenderer"])
+            for v in node.values():
+                find_items(v)
+        elif isinstance(node, list):
+            for v in node:
+                find_items(v)
 
-    print(f"Section count: {len(contents)}")
-    total_songs = 0
-    sample_song = None
+    find_items(data)
+    print(f"Found {len(items)} musicResponsiveListItemRenderer items")
 
-    for sec in contents:
-        shelf = sec.get("musicShelfRenderer") or sec.get("musicCardShelfRenderer")
-        if not shelf:
+    parsed_songs = []
+    for it in items:
+        # 提取 videoId
+        vid = it.get("playlistItemData", {}).get("videoId")
+        if not vid or len(vid) != 11:
+            overlay = it.get("overlay", {}).get("musicItemThumbnailOverlayRenderer", {})
+            c = overlay.get("content", {}).get("musicPlayButtonRenderer", {})
+            vid = c.get("playNavigationEndpoint", {}).get("watchEndpoint", {}).get("videoId")
+
+        if not vid or len(vid) != 11:
             continue
-        title = shelf.get("title", {}).get("runs", [{}])[0].get("text", "Unknown Section")
-        items = shelf.get("contents", [])
-        print(f" -> Section '{title}': {len(items)} items")
 
-        for item in items:
-            mrir = item.get("musicResponsiveListItemRenderer")
-            if not mrir:
-                continue
-            cols = mrir.get("flexColumns", [])
-            col1 = cols[0].get("musicResponsiveListItemFlexColumnRenderer", {}).get("text", {}).get("runs", [{}])[0].get("text", "")
-            play_nav = (
-                mrir.get("overlay", {})
-                .get("musicItemThumbnailOverlayRenderer", {})
-                .get("content", {})
-                .get("musicPlayButtonRenderer", {})
-                .get("playNavigationEndpoint", {})
-                .get("watchEndpoint", {})
-            )
-            vid = play_nav.get("videoId")
-            if vid:
-                total_songs += 1
-                if not sample_song:
-                    sample_song = {"title": col1, "videoId": vid}
+        cols = it.get("flexColumns", [])
+        title = ""
+        if cols:
+            runs = cols[0].get("musicResponsiveListItemFlexColumnRenderer", {}).get("text", {}).get("runs", [])
+            if runs:
+                title = runs[0].get("text", "")
 
-    print(f"\nTotal parsed playable songs: {total_songs}")
-    if sample_song:
-        print(f"First parsed song: {sample_song['title']} (videoId: {sample_song['videoId']})")
-    assert total_songs > 0, "No playable songs found in search results!"
+        artists = []
+        album_name = ""
+        dur_ms = 0
+
+        for col in cols[1:]:
+            rend = col.get("musicResponsiveListItemFlexColumnRenderer", {})
+            runs = rend.get("text", {}).get("runs", [])
+            for r in runs:
+                t = r.get("text", "").strip()
+                ep = r.get("navigationEndpoint", {}).get("browseEndpoint", {})
+                cfg = ep.get("browseEndpointContextSupportedConfigs", {}).get("browseEndpointContextMusicConfig", {})
+                page_type = cfg.get("pageType")
+
+                if page_type in ("MUSIC_PAGE_TYPE_ARTIST", "MUSIC_PAGE_TYPE_USER_CHANNEL"):
+                    if t and t not in ("•", "·"):
+                        artists.append(t)
+                elif page_type == "MUSIC_PAGE_TYPE_ALBUM":
+                    album_name = t
+                else:
+                    m = re.match(r"^(\d+):(\d+)$", t)
+                    if m:
+                        mins, secs = int(m.group(1)), int(m.group(2))
+                        dur_ms = (mins * 60 + secs) * 1000
+
+        parsed_songs.append({
+            "videoId": vid,
+            "title": title,
+            "artists": artists,
+            "album": album_name,
+            "durationMs": dur_ms
+        })
+
+    print(f"Total parsed songs: {len(parsed_songs)}")
+    assert len(parsed_songs) > 0, "No songs parsed!"
+
+    # 验证前 5 首
+    for s in parsed_songs[:5]:
+        print(f" -> [{s['durationMs']//1000//60:02d}:{s['durationMs']//1000%60:02d}] {s['title']} | 歌手: {' / '.join(s['artists'])} | 专辑: 《{s['album']}》")
+        assert len(s["title"]) > 0, "Empty song title"
+        assert len(s["artists"]) > 0, f"No artists for {s['title']}"
+        assert s["artists"][0] not in ("•", "·"), f"Invalid artist '{s['artists'][0]}'"
+        assert s["durationMs"] > 0, f"Duration is 0 for {s['title']}"
+
     print(">>> SEARCH TEST PASSED <<<")
 
 if __name__ == "__main__":

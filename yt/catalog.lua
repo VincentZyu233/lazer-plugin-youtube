@@ -86,122 +86,19 @@ function catalog.search(args)
   local seen_songs = {}
   local seen_albums = {}
   local seen_artists = {}
-  local seen_playlists = {}
 
-  local top_artist_name = query
-  local top_artist_id = ""
-  local top_artist_avatar = ""
-
+  -- 使用 YouTube Music 歌曲过滤参数，获取包含完整歌手、专辑与时长的标准单曲列表
   local payload = {
-    query = query
+    query = query,
+    params = "EgWKAQIIAWoOEAUQCRADEAQQChAVEBA%3D"
   }
-  local data, err = client.post_music("search", payload, config.CLIENT_WEB_REMIX)
+  local data = client.post_music("search", payload, config.CLIENT_WEB_REMIX)
 
   if data then
-    -- 1. 查找置顶卡片（musicCardShelfRenderer）提取权威主创艺术家
-    local contents = data.contents
-    local tabs = contents and contents.tabbedSearchResultsRenderer and contents.tabbedSearchResultsRenderer.tabs
-    local first_tab = tabs and tabs[1] and tabs[1].tabRenderer
-    local sections = first_tab and first_tab.content and first_tab.content.sectionListRenderer and first_tab.content.sectionListRenderer.contents or {}
-
-    for _, sec in ipairs(sections) do
-      if sec.musicCardShelfRenderer then
-        local shelf = sec.musicCardShelfRenderer
-        local t_obj = shelf.title
-        if t_obj and t_obj.runs and #t_obj.runs > 0 then
-          top_artist_name = t_obj.runs[1].text or top_artist_name
-          local nav = t_obj.runs[1].navigationEndpoint
-          if nav and nav.browseEndpoint and nav.browseEndpoint.browseId then
-            top_artist_id = nav.browseEndpoint.browseId
-          end
-        end
-        local th = shelf.thumbnail and shelf.thumbnail.musicThumbnailRenderer and shelf.thumbnail.musicThumbnailRenderer.thumbnail and shelf.thumbnail.musicThumbnailRenderer.thumbnail.thumbnails
-        if th and #th > 0 then
-          top_artist_avatar = th[#th].url or ""
-        end
-      end
-    end
-
-    if string.len(top_artist_id) > 0 and not seen_artists[top_artist_id] then
-      seen_artists[top_artist_id] = true
-      table.insert(artists, {
-        id = top_artist_id,
-        name = top_artist_name,
-        coverUrl = top_artist_avatar,
-        albumCount = 0
-      })
-    end
-
-    -- 2. 递归收集所有音乐卡片条目
     local music_items = {}
     find_music_items(data, music_items)
 
     for _, it in ipairs(music_items) do
-      local cols = it.flexColumns or {}
-      local title = ""
-      if cols[1] and cols[1].musicResponsiveListItemFlexColumnRenderer then
-        title = extract_text(cols[1].musicResponsiveListItemFlexColumnRenderer.text)
-      end
-
-      -- 遍历所有的 flexColumns 提取文本块
-      local all_runs = {}
-      for c_idx = 2, #cols do
-        local col_rend = cols[c_idx].musicResponsiveListItemFlexColumnRenderer
-        if col_rend and col_rend.text and col_rend.text.runs then
-          for _, r in ipairs(col_rend.text.runs) do
-            table.insert(all_runs, r)
-          end
-        end
-      end
-
-      local dur_ms = 0
-      local artist_name = nil
-      local year = 0
-
-      for _, r in ipairs(all_runs) do
-        local t = r.text or ""
-        -- 精确识别时长，如 "4:48", "03:28"
-        local min, sec_part = string.match(t, "^%s*(%d+):(%d+)%s*$")
-        if not min then
-          min, sec_part = string.match(t, "(%d+):(%d+)")
-        end
-        if min and sec_part then
-          dur_ms = ((tonumber(min) or 0) * 60 + (tonumber(sec_part) or 0)) * 1000
-        end
-
-        local y = string.match(t, "(%d%d%d%d)年?")
-        if y then
-          year = tonumber(y) or 0
-        end
-      end
-
-      -- 提取歌手名字（排除时长、数字、符号、类型标签）
-      for _, r in ipairs(all_runs) do
-        local t = r.text or ""
-        local trimmed = string.gsub(t, "^%s*(.-)%s*$", "%1")
-        local is_time = string.find(trimmed, ":") ~= nil
-        local is_tag = (trimmed == "歌曲" or trimmed == "视频" or trimmed == "专辑" or trimmed == "播放列表" or trimmed == "单曲" or trimmed == "个人资料" or trimmed == "音乐人" or trimmed == "•" or trimmed == "·" or trimmed == "")
-        local is_num = string.match(trimmed, "^%d+$") ~= nil
-        local is_stat = string.find(trimmed, "播放") or string.find(trimmed, "观看") or string.find(trimmed, "听众") or string.find(trimmed, "订阅") or string.find(trimmed, "次")
-
-        if not is_time and not is_tag and not is_num and not is_stat then
-          artist_name = trimmed
-          break
-        end
-      end
-
-      if not artist_name or string.len(artist_name) == 0 then
-        artist_name = top_artist_name
-      end
-
-      -- 提取最高清封面
-      local cover_url = ""
-      if it.thumbnail and it.thumbnail.musicThumbnailRenderer then
-        local th_obj = it.thumbnail.musicThumbnailRenderer.thumbnail
-        cover_url = extract_thumbnail(th_obj and th_obj.thumbnails)
-      end
-
-      -- 提取 videoId (歌曲)
       local vid = it.playlistItemData and it.playlistItemData.videoId
       if (not vid or string.len(vid) ~= 11) and it.overlay and it.overlay.musicItemThumbnailOverlayRenderer then
         local c = it.overlay.musicItemThumbnailOverlayRenderer.content
@@ -211,54 +108,103 @@ function catalog.search(args)
         end
       end
 
-      -- 提取 navigation 页面类型 (专辑/歌手/歌单)
-      local nav = it.navigationEndpoint
-      local browse_id = nav and nav.browseEndpoint and nav.browseEndpoint.browseId
-      local page_type = nav and nav.browseEndpoint and nav.browseEndpoint.browseEndpointContextSupportedConfigs and nav.browseEndpoint.browseEndpointContextSupportedConfigs.browseEndpointContextMusicConfig and nav.browseEndpoint.browseEndpointContextSupportedConfigs.browseEndpointContextMusicConfig.pageType
-
       if vid and string.len(vid) == 11 and not seen_songs[vid] then
         seen_songs[vid] = true
+
+        local cols = it.flexColumns or {}
+        local title = ""
+        if cols[1] and cols[1].musicResponsiveListItemFlexColumnRenderer then
+          title = extract_text(cols[1].musicResponsiveListItemFlexColumnRenderer.text)
+        end
+        if string.len(title) == 0 then
+          title = "Song " .. vid
+        end
+
+        local cover_url = ""
+        if it.thumbnail and it.thumbnail.musicThumbnailRenderer then
+          local th_obj = it.thumbnail.musicThumbnailRenderer.thumbnail
+          cover_url = extract_thumbnail(th_obj and th_obj.thumbnails)
+        end
         if string.len(cover_url) == 0 then
           cover_url = "https://i.ytimg.com/vi/" .. vid .. "/hqdefault.jpg"
         end
+
+        local song_artists = {}
+        local album_name = ""
+        local album_id = nil
+        local dur_ms = 0
+
+        -- 遍历 flexColumns 提取歌手、专辑、时长
+        for c_idx = 2, #cols do
+          local col_rend = cols[c_idx].musicResponsiveListItemFlexColumnRenderer
+          if col_rend and col_rend.text and col_rend.text.runs then
+            for _, r in ipairs(col_rend.text.runs) do
+              local t = r.text or ""
+              local endpoint = (r.navigationEndpoint and r.navigationEndpoint.browseEndpoint) or {}
+              local config_endpoint = endpoint.browseEndpointContextSupportedConfigs and
+                                      endpoint.browseEndpointContextSupportedConfigs.browseEndpointContextMusicConfig
+              local page_type = config_endpoint and config_endpoint.pageType
+              local b_id = endpoint.browseId
+
+              if page_type == "MUSIC_PAGE_TYPE_ARTIST" or page_type == "MUSIC_PAGE_TYPE_USER_CHANNEL" then
+                local trimmed_artist = string.gsub(t, "^%s*(.-)%s*$", "%1")
+                if string.len(trimmed_artist) > 0 and trimmed_artist ~= "•" and trimmed_artist ~= "·" and trimmed_artist ~= "・" then
+                  table.insert(song_artists, {
+                    id = b_id or ("yt_artist_" .. vid),
+                    name = trimmed_artist,
+                    coverUrl = ""
+                  })
+                  if b_id and not seen_artists[b_id] then
+                    seen_artists[b_id] = true
+                    table.insert(artists, {
+                      id = b_id,
+                      name = trimmed_artist,
+                      coverUrl = "",
+                      albumCount = 0
+                    })
+                  end
+                end
+              elseif page_type == "MUSIC_PAGE_TYPE_ALBUM" then
+                album_name = t
+                album_id = b_id
+                if b_id and not seen_albums[b_id] then
+                  seen_albums[b_id] = true
+                  table.insert(albums, {
+                    id = b_id,
+                    title = t,
+                    artists = song_artists,
+                    coverUrl = cover_url,
+                    year = 0,
+                    songCount = 0
+                  })
+                end
+              else
+                -- 匹配时间格式，如 4:48, 03:25
+                local min, sec_part = string.match(t, "^%s*(%d+):(%d+)%s*$")
+                if min and sec_part then
+                  dur_ms = ((tonumber(min) or 0) * 60 + (tonumber(sec_part) or 0)) * 1000
+                end
+              end
+            end
+          end
+        end
+
+        if #song_artists == 0 then
+          table.insert(song_artists, {
+            id = "yt_artist_" .. vid,
+            name = query,
+            coverUrl = ""
+          })
+        end
+
         table.insert(songs, {
           id = vid,
-          title = string.len(title) > 0 and title or ("Song " .. vid),
-          artists = {
-            { id = "yt_artist_" .. vid, name = artist_name, coverUrl = "" }
-          },
-          albumName = "YouTube Music",
+          title = title,
+          artists = song_artists,
+          albumId = album_id,
+          albumName = string.len(album_name) > 0 and album_name or "YouTube Music",
           coverUrl = cover_url,
           durationMs = dur_ms
-        })
-      elseif page_type == "MUSIC_PAGE_TYPE_ALBUM" and browse_id and not seen_albums[browse_id] then
-        seen_albums[browse_id] = true
-        table.insert(albums, {
-          id = browse_id,
-          title = title,
-          artists = {
-            { id = "yt_artist_" .. browse_id, name = artist_name, coverUrl = "" }
-          },
-          coverUrl = cover_url,
-          year = year,
-          songCount = 0
-        })
-      elseif (page_type == "MUSIC_PAGE_TYPE_ARTIST" or page_type == "MUSIC_PAGE_TYPE_USER_CHANNEL") and browse_id and not seen_artists[browse_id] then
-        seen_artists[browse_id] = true
-        table.insert(artists, {
-          id = browse_id,
-          name = title,
-          coverUrl = cover_url,
-          albumCount = 0
-        })
-      elseif page_type == "MUSIC_PAGE_TYPE_PLAYLIST" and browse_id and not seen_playlists[browse_id] then
-        seen_playlists[browse_id] = true
-        table.insert(playlists, {
-          id = browse_id,
-          name = title,
-          coverUrl = cover_url,
-          owner = artist_name,
-          songCount = 0
         })
       end
     end
