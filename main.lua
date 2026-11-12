@@ -20,7 +20,8 @@ function plugin.call(operation, args)
             "lyrics",
             "homeFeed",
             "radio",
-            "recommendations"
+            "recommendations",
+            "favorites"
           },
           loginHint = "在浏览器中打开 music.youtube.com，复制网络请求中的 Cookie 粘贴到下方即可登录",
           cookieHint = "支持包含 SID, HSID, SSID, SAPISID 的 Cookie 字符串"
@@ -50,6 +51,8 @@ function plugin.call(operation, args)
     return catalog.song(song_id)
   elseif operation == "lyrics" then
     return { lrc = "" }
+  elseif operation == "favorites" then
+    return catalog.favorites(args)
   elseif operation == "homeFeed" then
     return { sections = {} }
   end

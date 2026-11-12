@@ -337,12 +337,12 @@ Lazer YouTube Music Cookie 抓取工具
             cookieMap.set(c.name, c.value);
           }
 
-          // 核心凭据检测
+          // 核心凭据检测：必须包含 YouTube 专属会话 LOGIN_INFO 以及 Google 账号的核心 SID / SAPISID
+          const hasLoginInfo = cookieMap.has('LOGIN_INFO');
           const hasSapisid = cookieMap.has('SAPISID') || cookieMap.has('__Secure-3PAPISID') || cookieMap.has('__Secure-1PAPISID');
           const hasSid = cookieMap.has('SID') || cookieMap.has('__Secure-3PSID') || cookieMap.has('__Secure-1PSID');
-          const hasHsid = cookieMap.has('HSID') || cookieMap.has('SSID');
 
-          if (hasSapisid && hasSid && hasHsid) {
+          if (hasLoginInfo && (hasSapisid || hasSid)) {
             // 组装格式化 Cookie 字符串
             const cookiePairs = [];
             for (const [k, v] of cookieMap.entries()) {

@@ -50,7 +50,9 @@ local function do_post(url, payload, client_profile)
   local headers = {
     ["Content-Type"] = "application/json",
     ["User-Agent"] = ua,
-    ["X-Goog-Api-Format-Version"] = "2"
+    ["X-Goog-Api-Format-Version"] = "2",
+    ["Origin"] = config.HOST_MUSIC,
+    ["X-Origin"] = config.HOST_MUSIC
   }
 
   if visitor_data and string.len(visitor_data) > 0 then

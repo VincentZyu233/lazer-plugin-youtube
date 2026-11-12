@@ -202,11 +202,11 @@ async def monitor_cdp(ws_url: str, timeout: int) -> Optional[str]:
                     cookies = msg["result"].get("cookies", [])
                     cookie_map = {c["name"]: c["value"] for c in cookies}
 
+                    has_login_info = "LOGIN_INFO" in cookie_map
                     has_sapisid = any(k in cookie_map for k in ["SAPISID", "__Secure-3PAPISID", "__Secure-1PAPISID"])
                     has_sid = any(k in cookie_map for k in ["SID", "__Secure-3PSID", "__Secure-1PSID"])
-                    has_hsid = any(k in cookie_map for k in ["HSID", "SSID"])
 
-                    if has_sapisid and has_sid and has_hsid:
+                    if has_login_info and (has_sapisid or has_sid):
                         pairs = [f"{k}={v}" for k, v in cookie_map.items()]
                         return "; ".join(pairs)
             except asyncio.TimeoutError:
