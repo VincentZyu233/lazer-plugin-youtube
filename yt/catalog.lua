@@ -2,7 +2,6 @@ local client = require("yt.client")
 local config = require("yt.config")
 local catalog = {}
 
--- 提取文本（兼容 runs 结构与 simpleText）
 local function extract_text(obj)
   if not obj then return "" end
   if type(obj) == "string" then return obj end
@@ -19,7 +18,6 @@ local function extract_text(obj)
   return ""
 end
 
--- 提取最佳缩略图
 local function extract_thumbnail(thumbnails)
   if not thumbnails or type(thumbnails) ~= "table" then
     return ""
@@ -36,7 +34,6 @@ local function extract_thumbnail(thumbnails)
   return best_url
 end
 
---- 尝试从用户输入中提取 YouTube 11位视频 ID
 local function try_extract_video_id(input)
   if not input or type(input) ~= "string" then return nil end
   local id = string.match(input, "youtu%.be/([%w%-_]+)")
@@ -49,6 +46,22 @@ local function try_extract_video_id(input)
     return input
   end
   return nil
+end
+
+--- 通用递归查找所有包含 videoId 的 videoRenderer / compactVideoRenderer
+local function find_video_renderers(node, list)
+  if not node or type(node) ~= "table" then return end
+
+  if node.videoId and (node.title or node.headline) then
+    table.insert(list, node)
+    return
+  end
+
+  for _, v in pairs(node) do
+    if type(v) == "table" then
+      find_video_renderers(v, list)
+    end
+  end
 end
 
 --- 搜索单曲与视频
@@ -78,58 +91,64 @@ function catalog.search(args)
     }
   end
 
-  -- 特性 2：通过 InnerTube 进行关键词多维搜索
+  -- 特性 2：通过 WEB Client 进行标准搜索
+  local client_web = {
+    clientName = "WEB",
+    clientVersion = "2.20260708.00.00",
+    userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    hl = "zh-CN",
+    gl = "US"
+  }
+
   local payload = {
     query = query
   }
-  local data, err = client.post_youtube("search", payload, config.CLIENT_IOS)
+  local data, err = client.post_youtube("search", payload, client_web)
   if not data then
     return { songs = {}, albums = {}, artists = {}, playlists = {} }
   end
 
+  local video_nodes = {}
+  find_video_renderers(data, video_nodes)
+
   local songs = {}
-  local contents = data.contents
-  local section_list = contents and contents.sectionListRenderer
-  local sections = (section_list and section_list.contents) or {}
+  local seen_ids = {}
 
-  for _, sec in ipairs(sections) do
-    local item_section = sec.itemSectionRenderer
-    local items = (item_section and item_section.contents) or {}
-    for _, it in ipairs(items) do
-      local vr = it.videoRenderer or it.compactVideoRenderer
-      if vr and vr.videoId then
-        local vid = vr.videoId
-        local title = extract_text(vr.title)
-        local artist_name = extract_text(vr.ownerText or vr.shortBylineText)
-        local cover_url = extract_thumbnail(vr.thumbnail and vr.thumbnail.thumbnails)
-        if string.len(cover_url) == 0 then
-          cover_url = "https://i.ytimg.com/vi/" .. vid .. "/hqdefault.jpg"
-        end
+  for _, vr in ipairs(video_nodes) do
+    local vid = vr.videoId
+    if vid and string.len(vid) == 11 and not seen_ids[vid] then
+      seen_ids[vid] = true
 
-        local dur_sec = 0
-        local dur_text = extract_text(vr.lengthText)
-        if dur_text and string.len(dur_text) > 0 then
-          local min, sec_part = string.match(dur_text, "(%d+):(%d+)")
-          if min and sec_part then
-            dur_sec = (tonumber(min) or 0) * 60 + (tonumber(sec_part) or 0)
-          end
-        end
-
-        table.insert(songs, {
-          id = vid,
-          name = title,
-          artists = {
-            { id = "yt_artist_" .. vid, name = string.len(artist_name) > 0 and artist_name or "YouTube" }
-          },
-          album = {
-            id = "yt_album_" .. vid,
-            name = "YouTube Single",
-            cover = cover_url
-          },
-          cover = cover_url,
-          duration = dur_sec
-        })
+      local title = extract_text(vr.title)
+      local artist_name = extract_text(vr.ownerText or vr.shortBylineText or vr.longBylineText)
+      local cover_url = extract_thumbnail(vr.thumbnail and vr.thumbnail.thumbnails)
+      if string.len(cover_url) == 0 then
+        cover_url = "https://i.ytimg.com/vi/" .. vid .. "/hqdefault.jpg"
       end
+
+      local dur_sec = 0
+      local dur_text = extract_text(vr.lengthText)
+      if dur_text and string.len(dur_text) > 0 then
+        local min, sec_part = string.match(dur_text, "(%d+):(%d+)")
+        if min and sec_part then
+          dur_sec = (tonumber(min) or 0) * 60 + (tonumber(sec_part) or 0)
+        end
+      end
+
+      table.insert(songs, {
+        id = vid,
+        name = string.len(title) > 0 and title or ("Video " .. vid),
+        artists = {
+          { id = "yt_artist_" .. vid, name = string.len(artist_name) > 0 and artist_name or "YouTube" }
+        },
+        album = {
+          id = "yt_album_" .. vid,
+          name = "YouTube",
+          cover = cover_url
+        },
+        cover = cover_url,
+        duration = dur_sec
+      })
     end
   end
 

@@ -13,6 +13,9 @@
     "homeFeed",
     "radio"
   ],
+  "auth": [
+    "cookie"
+  ],
   "permissions": {
     "network": [
       "*.youtube.com",

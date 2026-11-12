@@ -1,3 +1,4 @@
+local account = require("yt.account")
 local catalog = require("yt.catalog")
 local stream = require("yt.stream")
 
@@ -13,7 +14,7 @@ function plugin.call(operation, args)
         {
           id = "youtube",
           name = "YouTube Music",
-          auth = {},
+          auth = { "cookie" },
           capabilities = {
             "search",
             "lyrics",
@@ -21,23 +22,20 @@ function plugin.call(operation, args)
             "radio",
             "recommendations"
           },
-          loginHint = "免登录即用",
-          cookieHint = "支持全球歌曲与视频音频流"
+          loginHint = "在浏览器中打开 music.youtube.com，复制网络请求中的 Cookie 粘贴到下方即可登录",
+          cookieHint = "支持包含 SID, HSID, SSID, SAPISID 的 Cookie 字符串"
         }
       }
     }
   end
 
-  -- 2. 伪会话（免登录）
+  -- 2. 账号会话与登录
   if operation == "session" then
-    return {
-      valid = true,
-      user = {
-        id = "guest",
-        name = "YouTube Guest",
-        avatar = "https://www.youtube.com/s/desktop/9906d203/img/favicon_144x144.png"
-      }
-    }
+    return account.session()
+  elseif operation == "loginCookie" then
+    return account.login_cookie(args)
+  elseif operation == "logout" then
+    return account.logout()
   end
 
   -- 3. 搜索与音频流
