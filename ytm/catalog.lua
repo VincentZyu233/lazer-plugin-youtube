@@ -50,6 +50,30 @@ local function trim_str(s)
   return string.sub(s, i, j)
 end
 
+--- 纯字符串安全按行切割，完全避免使用 string.gmatch（杜绝 lua_dardo_plus 在最后一项触发的 RangeError 崩溃）
+local function split_lines(str)
+  local lines = {}
+  if not str or type(str) ~= "string" then return lines end
+  local len = string.len(str)
+  local start_pos = 1
+  while start_pos <= len do
+    local nl = string.find(str, "\n", start_pos, true)
+    local line
+    if nl then
+      line = string.sub(str, start_pos, nl - 1)
+      start_pos = nl + 1
+    else
+      line = string.sub(str, start_pos, len)
+      start_pos = len + 1
+    end
+    if string.len(line) > 0 and string.byte(line, string.len(line)) == 13 then
+      line = string.sub(line, 1, string.len(line) - 1)
+    end
+    table.insert(lines, line)
+  end
+  return lines
+end
+
 --- 纯字符串安全解析时长为毫秒数（支持 "4:48", "03:25", "1:05:20"）
 -- 完全避免使用 Lua 正则捕获组，杜绝 Dart RegExp 转换与捕获组截断问题
 local function parse_time_to_ms(str)
@@ -745,7 +769,7 @@ function catalog.lyrics(song_id)
   local step_ms = 4000 -- 每行平滑间隔 4000ms
   local current_ms = 0
 
-  for line in string.gmatch(raw_text, "([^\r\n]+)") do
+  for _, line in ipairs(split_lines(raw_text)) do
     local trimmed = trim_str(line)
     if string.len(trimmed) > 0 then
       local min = math.floor(current_ms / 60000)
