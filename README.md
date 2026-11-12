@@ -6,11 +6,17 @@
 
 ## ✨ 特性亮点
 
+- **精准毫秒级逐行滚动歌词（Live Lyrics）**：
+  - 借鉴 [sigma67/ytmusicapi](https://github.com/sigma67/ytmusicapi) 的逆向工程精髓，采用 `ANDROID_MUSIC (7.21.50)` 移动端接口精准抓取官方毫秒级 `cueRange` 时间戳，自动合成标准同步 LRC。
+  - 支持多级回退机制：无动态时间轴歌曲自动回退为 LyricFind 静态全本歌词，纯音乐（`unselectable`）秒级识别。
 - **双轨全域检索**：
   - **YouTube Music**：优先呈现录音室单曲、艺人官方专辑与榜单。
   - **全量 YouTube 视频支持**：支持直接检索任意 YouTube 视频的音频轨，或在搜索栏直接粘贴视频分享链接（`youtu.be/...` 或 `watch?v=...`）秒开！
-- **移动端 InnerTube 直链流提取**：
-  - 参考 `yt-dlp` 逆向精髓，通过伪装移动端（iOS / Android）客户端协议，直接提取原生 128kbps AAC / 160kbps Opus 音频直链，免去复杂的网页端 JS 解密开销。
+- **移动端 InnerTube 直链流提取与防缓冲卡顿（Anti-Throttling）**：
+  - 参考 `yt-dlp` 逆向精髓，通过伪装移动端（Apple VisionOS / Android）客户端协议，直接提取原生 128kbps AAC / Opus 音频直链，免去复杂的网页端 JS 解密开销。
+  - 智能流量调度机制，缓冲持续超越播放速率，保证播放平滑不中断。
+- **现代化分层工程架构**：
+  - 深度对齐 `ytmusicapi` 原生范式，划分 `core`（通信与安全寻址 `nav()`）、`parsers`（纯数据提纯）与 `services`（业务编排调度），健壮防范空指针与 Dart 虚拟机边界异常。
 - **轻量独立**：纯 Lua 实现，无额外 Python / 原生动态库依赖。
 
 ---
@@ -44,6 +50,7 @@ node tools/build.js
 ## 💖 鸣谢与致敬
 
 - [chuxuehaocai/Lazer](https://github.com/chuxuehaocai/Lazer) - 优雅而纯粹的手工打造跨平台音乐播放器。
+- [sigma67/ytmusicapi](https://github.com/sigma67/ytmusicapi) - 优秀的 YouTube Music Python API 库，为本项目的时间戳歌词逆向、安全深度寻址工具与架构分层设计提供了核心灵感。
 - [yt-dlp/yt-dlp](https://github.com/yt-dlp/yt-dlp) - 业界领先的音视频提取框架与逆向工程参考。
 
 ---
