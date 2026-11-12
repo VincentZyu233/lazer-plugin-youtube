@@ -1,4 +1,5 @@
 local config = require("yt.config")
+local auth = require("yt.auth")
 local client = {}
 
 local memory_visitor_data = nil
@@ -62,6 +63,11 @@ local function do_post(url, payload, client_profile)
   local cookie = client.get_cookie()
   if cookie and string.len(cookie) > 0 then
     headers["Cookie"] = cookie
+    local req_origin = headers["Origin"] or config.HOST_MUSIC
+    local auth_header = auth.generate_authorization(cookie, req_origin)
+    if auth_header then
+      headers["Authorization"] = auth_header
+    end
   end
 
   local body_str = host.json_encode(payload)

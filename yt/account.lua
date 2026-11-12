@@ -1,4 +1,5 @@
 local config = require("yt.config")
+local auth = require("yt.auth")
 local account = {}
 
 --- 从 account_menu 的响应中提取当前登录账号的用户昵称与头像
@@ -82,17 +83,23 @@ function account.login_cookie(args)
     }
   }
 
+  local auth_header = auth.generate_authorization(cookie_str, config.HOST_MUSIC)
+  local req_headers = {
+    ["Content-Type"] = "application/json",
+    ["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    ["Origin"] = config.HOST_MUSIC,
+    ["X-Origin"] = config.HOST_MUSIC,
+    ["X-Goog-Api-Format-Version"] = "2",
+    ["Cookie"] = cookie_str
+  }
+  if auth_header then
+    req_headers["Authorization"] = auth_header
+  end
+
   local res = host.http({
     url = "https://music.youtube.com/youtubei/v1/account/account_menu",
     method = "POST",
-    headers = {
-      ["Content-Type"] = "application/json",
-      ["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-      ["Origin"] = config.HOST_MUSIC,
-      ["X-Origin"] = config.HOST_MUSIC,
-      ["X-Goog-Api-Format-Version"] = "2",
-      ["Cookie"] = cookie_str
-    },
+    headers = req_headers,
     body = host.json_encode(payload)
   })
 
