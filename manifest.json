@@ -1,0 +1,25 @@
+{
+  "id": "lazer.youtube",
+  "name": "YouTube Music",
+  "version": "0.1.0",
+  "description": "专为 Lazer 打造的 YouTube & YouTube Music Lua Gateway 插件，支持高品质音频流、单曲与视频搜索、官方榜单与专属电台。",
+  "author": "VincentZyu",
+  "entry": "main.lua",
+  "apiVersion": 1,
+  "provider": "youtube",
+  "capabilities": [
+    "search",
+    "recommendations",
+    "homeFeed",
+    "radio"
+  ],
+  "permissions": {
+    "network": [
+      "*.youtube.com",
+      "*.googlevideo.com",
+      "*.ytimg.com",
+      "*.google.com"
+    ],
+    "storage": true
+  }
+}

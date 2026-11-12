@@ -1,0 +1,3 @@
+# Enable Markdown in GitHub language statistics
+*.md linguist-detectable=true linguist-documentation=false
+*.markdown linguist-detectable=true linguist-documentation=false

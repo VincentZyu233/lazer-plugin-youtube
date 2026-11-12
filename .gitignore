@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build artifacts
+dist/
+*.zip
+*.tar.gz
+
+# Environment & temporary files
+__pycache__/
+*.pyc
+.env
+.env.*
+*.log
+*.tmp
+temp/
+.DS_Store
+Thumbs.db
