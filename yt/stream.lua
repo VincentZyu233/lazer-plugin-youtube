@@ -3,10 +3,20 @@ local config = require("yt.config")
 local stream = {}
 
 --- 获取指定 videoId 的音频直链
---- 优先挑选 160k Opus (itag 251) 或 128k AAC (itag 140)
+--- 采用 VisionOS 客户端与 Visitor 会话签名，直出无加密 Opus/AAC 直链
 function stream.get_audio_url(video_id, target_quality)
   if not video_id or type(video_id) ~= "string" or string.len(video_id) == 0 then
-    return nil, "Invalid videoId"
+    error("Invalid videoId", 0)
+  end
+
+  local visitor_data = client.ensure_visitor_data()
+
+  local client_ctx = {}
+  for k, v in pairs(config.CLIENT_VISIONOS) do
+    client_ctx[k] = v
+  end
+  if visitor_data and string.len(visitor_data) > 0 then
+    client_ctx.visitorData = visitor_data
   end
 
   local payload = {
@@ -18,23 +28,31 @@ function stream.get_audio_url(video_id, target_quality)
       }
     },
     contentCheckOk = true,
-    racyCheckOk = true
+    racyCheckOk = true,
+    context = {
+      client = client_ctx
+    }
   }
 
-  local ctx = {
-    client = config.CLIENT_VISIONOS
-  }
-  payload.context = ctx
-
+  local ua = config.CLIENT_VISIONOS.userAgent
   local headers = {
     ["X-YouTube-Client-Name"] = "101",
     ["X-YouTube-Client-Version"] = "1.02",
     ["Origin"] = "https://www.youtube.com",
-    ["User-Agent"] = config.CLIENT_VISIONOS.userAgent,
+    ["User-Agent"] = ua,
     ["Content-Type"] = "application/json"
   }
 
-  local url = config.HOST_YOUTUBE .. "/youtubei/v1/player"
+  if visitor_data and string.len(visitor_data) > 0 then
+    headers["X-Goog-Visitor-Id"] = visitor_data
+  end
+
+  local cookie = client.get_cookie()
+  if cookie and string.len(cookie) > 0 then
+    headers["Cookie"] = cookie
+  end
+
+  local url = config.HOST_YOUTUBE .. "/youtubei/v1/player?prettyPrint=false"
   local res = host.http({
     url = url,
     method = "POST",
@@ -43,19 +61,23 @@ function stream.get_audio_url(video_id, target_quality)
   })
 
   if not res or res.status ~= 200 then
-    return nil, "HTTP " .. tostring(res and res.status or "nil")
+    error("YouTube player request failed: HTTP " .. tostring(res and res.status or "nil"), 0)
   end
 
   local ok, data = pcall(host.json_decode, res.body)
   if not ok or not data then
-    return nil, "Failed to parse player response"
+    error("Failed to parse YouTube player response", 0)
+  end
+
+  if data.responseContext and data.responseContext.visitorData then
+    client.set_visitor_data(data.responseContext.visitorData)
   end
 
   local streaming_data = data.streamingData
   if not streaming_data then
     local status = data.playabilityStatus
     local reason = (status and status.reason) or "No streamingData found"
-    return nil, reason
+    error("YouTube playback error: " .. reason, 0)
   end
 
   local formats = streaming_data.adaptiveFormats or {}
@@ -78,20 +100,26 @@ function stream.get_audio_url(video_id, target_quality)
   end
 
   if not best_audio or not best_audio.url then
-    return nil, "No unencrypted direct audio stream found"
+    error("No unencrypted direct audio stream found for video: " .. video_id, 0)
   end
 
-  local mime = best_audio.mimeType or ""
-  local ext = "m4a"
-  if string.find(mime, "webm") or string.find(mime, "opus") then
-    ext = "webm"
+  local mime = best_audio.mimeType or "audio/webm"
+  local suffix = "webm"
+  if string.find(mime, "mp4") or string.find(mime, "m4a") then
+    suffix = "m4a"
   end
 
+  -- 对齐 Lazer 宿主 MusicStream 契约字段
   return {
     url = best_audio.url,
-    bitrate = best_audio.bitrate or 128000,
-    format = ext,
-    duration = math.floor((tonumber(best_audio.approxDurationMs) or 0) / 1000)
+    bitRate = best_audio.bitrate or 128000,
+    suffix = suffix,
+    contentType = mime,
+    transcoded = false,
+    headers = {
+      ["User-Agent"] = ua,
+      ["Origin"] = "https://www.youtube.com"
+    }
   }
 end
 
