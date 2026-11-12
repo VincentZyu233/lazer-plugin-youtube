@@ -5,13 +5,15 @@ local function rol(val, n)
   return (((val << n) | (val >> (32 - n))) & 4294967295)
 end
 
---- 纯 Lua 实现的标准 SHA-1 哈希算法 (完全避免 0x 十六进制字面量以兼容 Dart lua_dardo 解释器)
+--- 纯 Lua 实现的标准 SHA-1 哈希算法
+-- 彻底避开 0x 十六进制字面量与字符串 # 运算符，完美兼容 Dart lua_dardo 虚拟机
 function auth.sha1(msg)
   if not msg then return "" end
   msg = tostring(msg)
 
+  local msg_len = string.len(msg)
   local bytes = {}
-  for i = 1, #msg do
+  for i = 1, msg_len do
     bytes[i] = string.byte(msg, i)
   end
 
@@ -88,29 +90,29 @@ end
 
 --- 从 Cookie 字符串中提取 SAPISID 凭据
 function auth.get_sapisid(cookie_str)
-  if not cookie_str or type(cookie_str) ~= "string" or #cookie_str == 0 then
+  if not cookie_str or type(cookie_str) ~= "string" or string.len(cookie_str) == 0 then
     return nil
   end
 
   -- 优先使用 host 原生 cookie 解析
   if host and type(host.cookie_field) == "function" then
     local s = host.cookie_field(cookie_str, "SAPISID")
-    if s and #s > 0 then return s end
+    if s and string.len(s) > 0 then return s end
     s = host.cookie_field(cookie_str, "__Secure-3PAPISID")
-    if s and #s > 0 then return s end
+    if s and string.len(s) > 0 then return s end
     s = host.cookie_field(cookie_str, "__Secure-1PAPISID")
-    if s and #s > 0 then return s end
+    if s and string.len(s) > 0 then return s end
   end
 
   -- 正则模式匹配回退
   local val = cookie_str:match("[;%s]?SAPISID=([^;%s\r\n]+)")
-  if val and #val > 0 then return val end
+  if val and string.len(val) > 0 then return val end
 
   val = cookie_str:match("[;%s]?__Secure%-3PAPISID=([^;%s\r\n]+)")
-  if val and #val > 0 then return val end
+  if val and string.len(val) > 0 then return val end
 
   val = cookie_str:match("[;%s]?__Secure%-1PAPISID=([^;%s\r\n]+)")
-  if val and #val > 0 then return val end
+  if val and string.len(val) > 0 then return val end
 
   return nil
 end
@@ -141,7 +143,7 @@ function auth.generate_authorization(cookie_str, origin)
   end
 
   if not ts then
-    ts = 1794503614
+    ts = 1794503044
   end
 
   local to_hash = tostring(ts) .. " " .. sapisid .. " " .. host_origin
