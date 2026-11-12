@@ -396,7 +396,7 @@ async function runDeviceFlowMode(mode = 3) {
     console.log(`[3/3] ⏳ 正在等待手机端确认授权… (完成后将自动同步)`);
   } else if (mode === 4) {
     console.log(`[2/3] 正在拉起极简高清二维码小窗口…`);
-    const svgContent = renderSVG(qrUrl, 4, 280);
+    const svgContent = renderSVG(qrUrl, 4, 240);
     const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -413,39 +413,39 @@ async function runDeviceFlowMode(mode = 3) {
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      padding: 24px;
+      padding: 12px;
       user-select: none;
     }
     .card {
       background: #1e1e1e;
       border: 1px solid #333;
-      border-radius: 16px;
-      padding: 24px;
+      border-radius: 14px;
+      padding: 18px 16px;
       text-align: center;
       box-shadow: 0 8px 32px rgba(0,0,0,0.5);
       width: 100%;
-      max-width: 360px;
+      max-width: 340px;
     }
-    .title { font-size: 18px; font-weight: 600; margin-bottom: 6px; color: #fff; }
-    .subtitle { font-size: 13px; color: #888; margin-bottom: 18px; }
+    .title { font-size: 17px; font-weight: 600; margin-bottom: 4px; color: #fff; }
+    .subtitle { font-size: 12px; color: #888; margin-bottom: 12px; }
     .qr-box {
       background: #fff;
-      padding: 12px;
-      border-radius: 12px;
+      padding: 8px;
+      border-radius: 10px;
       display: inline-block;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
     .code-box {
       background: #2a2a2a;
       border: 1px dashed #555;
-      padding: 10px 16px;
+      padding: 6px 12px;
       border-radius: 8px;
-      margin-bottom: 16px;
+      margin-bottom: 10px;
     }
-    .code-title { font-size: 11px; color: #aaa; margin-bottom: 4px; text-transform: uppercase; }
-    .code { font-size: 20px; font-family: monospace; font-weight: bold; color: #4ade80; letter-spacing: 2px; }
-    .footer { font-size: 12px; color: #666; line-height: 1.5; }
-    .status { font-size: 12px; color: #38bdf8; margin-top: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .code-title { font-size: 11px; color: #aaa; margin-bottom: 2px; text-transform: uppercase; }
+    .code { font-size: 18px; font-family: monospace; font-weight: bold; color: #4ade80; letter-spacing: 2px; }
+    .footer { font-size: 12px; color: #666; line-height: 1.4; }
+    .status { font-size: 12px; color: #38bdf8; margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 6px; }
     .spinner {
       width: 10px; height: 10px; border: 2px solid #38bdf8; border-top-color: transparent;
       border-radius: 50%; animation: spin 1s linear infinite;
@@ -475,8 +475,8 @@ async function runDeviceFlowMode(mode = 3) {
     if (browserPath) {
       browserProcess = spawn(browserPath, [
         `--app=file:///${tempHtmlPath.replace(/\\/g, '/')}`,
-        '--window-size=420,580',
-        '--window-position=450,200',
+        '--window-size=380,620',
+        '--window-position=450,150',
         '--no-first-run'
       ], { detached: true, stdio: 'ignore' });
     }
