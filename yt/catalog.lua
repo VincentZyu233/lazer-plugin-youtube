@@ -34,6 +34,62 @@ local function extract_thumbnail(thumbnails)
   return best_url
 end
 
+--- 纯字符串安全去除首尾空白，不依赖正则引擎（兼容 Dart lua_dardo_plus 虚拟机）
+local function trim_str(s)
+  if not s or type(s) ~= "string" then return "" end
+  local len = string.len(s)
+  local i = 1
+  local j = len
+  while i <= j and string.byte(s, i) <= 32 do
+    i = i + 1
+  end
+  while j >= i and string.byte(s, j) <= 32 do
+    j = j - 1
+  end
+  if i > j then return "" end
+  return string.sub(s, i, j)
+end
+
+--- 纯字符串安全解析时长为毫秒数（支持 "4:48", "03:25", "1:05:20"）
+-- 完全避免使用 Lua 正则捕获组，杜绝 Dart RegExp 转换与捕获组截断问题
+local function parse_time_to_ms(str)
+  if not str or type(str) ~= "string" then return 0 end
+  local colon1 = string.find(str, ":", 1, true)
+  if not colon1 then return 0 end
+
+  local parts = {}
+  local start_pos = 1
+  while true do
+    local c_pos = string.find(str, ":", start_pos, true)
+    if not c_pos then
+      table.insert(parts, string.sub(str, start_pos))
+      break
+    end
+    table.insert(parts, string.sub(str, start_pos, c_pos - 1))
+    start_pos = c_pos + 1
+  end
+
+  local nums = {}
+  for _, p in ipairs(parts) do
+    local clean = ""
+    for idx = 1, string.len(p) do
+      local b = string.byte(p, idx)
+      if b >= 48 and b <= 57 then
+        clean = clean .. string.char(b)
+      end
+    end
+    if string.len(clean) == 0 then return 0 end
+    table.insert(nums, tonumber(clean) or 0)
+  end
+
+  if #nums == 2 then
+    return (nums[1] * 60 + nums[2]) * 1000
+  elseif #nums == 3 then
+    return (nums[1] * 3600 + nums[2] * 60 + nums[3]) * 1000
+  end
+  return 0
+end
+
 local function try_extract_video_id(input)
   if not input or type(input) ~= "string" then return nil end
   local id = string.match(input, "youtu%.be/([%w%-_]+)")
@@ -147,7 +203,7 @@ function catalog.search(args)
               local b_id = endpoint.browseId
 
               if page_type == "MUSIC_PAGE_TYPE_ARTIST" or page_type == "MUSIC_PAGE_TYPE_USER_CHANNEL" then
-                local trimmed_artist = string.gsub(t, "^%s*(.-)%s*$", "%1")
+                local trimmed_artist = trim_str(t)
                 if string.len(trimmed_artist) > 0 and trimmed_artist ~= "•" and trimmed_artist ~= "·" and trimmed_artist ~= "・" then
                   table.insert(song_artists, {
                     id = b_id or ("yt_artist_" .. vid),
@@ -165,13 +221,13 @@ function catalog.search(args)
                   end
                 end
               elseif page_type == "MUSIC_PAGE_TYPE_ALBUM" then
-                album_name = t
+                album_name = trim_str(t)
                 album_id = b_id
                 if b_id and not seen_albums[b_id] then
                   seen_albums[b_id] = true
                   table.insert(albums, {
                     id = b_id,
-                    title = t,
+                    title = album_name,
                     artists = song_artists,
                     coverUrl = cover_url,
                     year = 0,
@@ -179,13 +235,29 @@ function catalog.search(args)
                   })
                 end
               else
-                -- 匹配时间格式，如 4:48, 03:25
-                local min, sec_part = string.match(t, "^%s*(%d+):(%d+)%s*$")
-                if min and sec_part then
-                  dur_ms = ((tonumber(min) or 0) * 60 + (tonumber(sec_part) or 0)) * 1000
+                local ms = parse_time_to_ms(t)
+                if ms > 0 then
+                  dur_ms = ms
                 end
               end
             end
+          end
+        end
+
+        -- 保底：如果 flexColumns 中未识别到时长，检查 fixedColumns
+        if dur_ms == 0 and it.fixedColumns then
+          for _, fcol in ipairs(it.fixedColumns) do
+            local rend = fcol.musicResponsiveListItemFixedColumnRenderer
+            if rend and rend.text and rend.text.runs then
+              for _, r in ipairs(rend.text.runs) do
+                local ms = parse_time_to_ms(r.text)
+                if ms > 0 then
+                  dur_ms = ms
+                  break
+                end
+              end
+            end
+            if dur_ms > 0 then break end
           end
         end
 
