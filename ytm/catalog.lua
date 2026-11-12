@@ -672,17 +672,16 @@ function catalog.lyrics(song_id)
   for _, t in ipairs(tabs) do
     local rend = t.tabRenderer
     if rend then
-      -- 如果标记为 unselectable，说明是纯音乐或官方未收录歌词
-      if rend.unselectable == true then
-        return {}
-      end
       local endpoint = rend.endpoint and rend.endpoint.browseEndpoint
       local b_id = endpoint and endpoint.browseId
-      if b_id and type(b_id) == "string" then
-        if string.sub(b_id, 1, 4) == "MPLY" or rend.title == "歌词" or rend.title == "Lyrics" then
-          lyrics_browse_id = b_id
-          break
+      local is_lyrics_tab = (b_id and type(b_id) == "string" and string.sub(b_id, 1, 4) == "MPLY") or rend.title == "歌词" or rend.title == "Lyrics"
+      if is_lyrics_tab then
+        -- 如果歌词标签被标记为 unselectable，说明是纯音乐或官方未收录歌词
+        if rend.unselectable == true then
+          return {}
         end
+        lyrics_browse_id = b_id
+        break
       end
     end
   end
