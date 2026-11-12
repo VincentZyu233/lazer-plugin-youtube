@@ -2,6 +2,8 @@ import sys
 from test_search import test_search
 from test_stream import test_stream
 from test_song import test_song
+from test_lyrics import test_lyrics, test_lyrics_unselectable
+from test_stream_nodes import test_stream_nodes
 
 def main():
     print("==================================================")
@@ -15,6 +17,9 @@ def main():
         ("Search Test (iyowa)", lambda: test_search("iyowa")),
         ("Song Details (7MkUDkzsge0)", lambda: test_song("7MkUDkzsge0")),
         ("Stream & Range Probe (7MkUDkzsge0)", lambda: test_stream("7MkUDkzsge0")),
+        ("Stream Bandwidth & Nodes Probe (1LBbOldnZcA)", lambda: test_stream_nodes("1LBbOldnZcA")),
+        ("Lyrics & LRC Synthesis (1LBbOldnZcA)", lambda: test_lyrics("1LBbOldnZcA")),
+        ("Lyrics Unselectable Check (hwpeUW1yEOI)", lambda: test_lyrics_unselectable("hwpeUW1yEOI")),
     ]
 
     for name, fn in tests:
