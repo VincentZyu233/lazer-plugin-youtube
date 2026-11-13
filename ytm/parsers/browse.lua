@@ -371,4 +371,42 @@ function browse_parser.parse_playlist_songs(data)
   return songs
 end
 
+--- 解析歌手主页的热门歌曲列表 (Top songs)
+function browse_parser.parse_artist_songs(data)
+  local songs = {}
+  if not data or type(data) ~= "table" then return songs end
+
+  local seen_songs = {}
+  local sec_list = nav.nav(data, {
+    "contents", "singleColumnBrowseResultsRenderer", "tabs", 1, "tabRenderer",
+    "content", "sectionListRenderer", "contents"
+  }) or {}
+
+  -- 1. 优先从第 1 个 sectionListRenderer 的 musicShelfRenderer 提取热门歌曲
+  for _, sec in ipairs(sec_list) do
+    if sec.musicShelfRenderer and sec.musicShelfRenderer.contents then
+      for _, it in ipairs(sec.musicShelfRenderer.contents) do
+        local r = it.musicResponsiveListItemRenderer
+        if r then
+          local s = search_parser.parse_song_item(r, nil, seen_songs)
+          if s then table.insert(songs, s) end
+        end
+      end
+      if #songs > 0 then break end
+    end
+  end
+
+  -- 2. 若未找到，回退到全局寻找
+  if #songs == 0 then
+    local music_items = {}
+    nav.find_music_items(data, music_items)
+    for _, it in ipairs(music_items) do
+      local s = search_parser.parse_song_item(it, nil, seen_songs)
+      if s then table.insert(songs, s) end
+    end
+  end
+
+  return songs
+end
+
 return browse_parser

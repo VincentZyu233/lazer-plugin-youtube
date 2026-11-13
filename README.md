@@ -33,7 +33,15 @@
 多维度精准检索官方单曲、专辑、歌手与全量 YouTube 视频，支持在搜索栏直接粘贴视频分享直链（`youtu.be/...` 或 `watch?v=...`）秒级解析播放。
 ![单曲与视频搜索](docs/images/preview/search.song.iyowa.png)
 
-### ❤️ 3. 红心收藏与我喜欢的音乐 (Favorites)
+### 💿 3. 专辑搜索与全盘试听 (Album Search)
+支持独立专辑 Tab 检索，呈现完整的唱片发行信息与官方高品质音轨列表。
+![专辑搜索](docs/images/preview/search.album.valorant.png)
+
+### 📑 4. 歌单与合辑特辑搜索 (Playlist Search)
+检索 YouTube Music 丰富的官方精选特辑与社区公共歌单，支持一键载入整张试听。
+![歌单搜索](docs/images/preview/search.songlist.jaychou.png)
+
+### ❤️ 5. 红心收藏与我喜欢的音乐 (Favorites)
 播放器底栏爱心一键点亮与取消，双向秒级无感同步 YouTube Music 云端“喜欢的音乐”与左侧专属资料库。
 ![红心收藏与我喜欢的音乐](docs/images/preview/like.png)
 

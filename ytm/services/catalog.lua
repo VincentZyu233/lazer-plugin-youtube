@@ -111,16 +111,28 @@ function catalog_service.song(id)
   return browse_parser.parse_song_details(res, vid)
 end
 
+--- 规范化 InnerTube browseId (防止专辑 MPREb_ 与歌手 UC 被错误追加 VL 前缀)
+local function normalize_browse_id(raw_id)
+  local id = tostring(raw_id or "")
+  id = string.match(id, "([a-zA-Z0-9_-]+)$") or id
+  -- 官方专辑 MPREb_ 或歌手频道 UC，严禁追加 VL 前缀
+  if string.sub(id, 1, 6) == "MPREb_" or string.sub(id, 1, 2) == "UC" then
+    return id
+  end
+  -- 已有标准歌单前缀，直接返回
+  if string.sub(id, 1, 2) == "VL" or string.sub(id, 1, 2) == "PL" or string.sub(id, 1, 4) == "RDCL" then
+    return id
+  end
+  -- 纯歌单短 ID，补全 VL
+  return "VL" .. id
+end
+
 --- 歌单详情业务 (对齐 Lazer MusicPlaylist 契约)
 function catalog_service.playlist(playlist_id)
   local pid = tostring(playlist_id or "")
   if string.len(pid) == 0 then return nil end
 
-  local clean_id = string.match(pid, "([a-zA-Z0-9_-]+)$") or pid
-  local b_id = clean_id
-  if string.sub(b_id, 1, 2) ~= "VL" and string.sub(b_id, 1, 2) ~= "PL" and string.sub(b_id, 1, 4) ~= "RDCL" then
-    b_id = "VL" .. b_id
-  end
+  local b_id = normalize_browse_id(pid)
 
   transport.ensure_visitor_data()
   local ok, data = pcall(transport.post_music, "browse", { browseId = b_id }, constants.CLIENT_WEB_REMIX)
@@ -153,11 +165,7 @@ function catalog_service.playlist_songs(playlist_id, limit, offset)
   local pid = tostring(playlist_id or "")
   if string.len(pid) == 0 then return {} end
 
-  local clean_id = string.match(pid, "([a-zA-Z0-9_-]+)$") or pid
-  local b_id = clean_id
-  if string.sub(b_id, 1, 2) ~= "VL" and string.sub(b_id, 1, 2) ~= "PL" and string.sub(b_id, 1, 4) ~= "RDCL" then
-    b_id = "VL" .. b_id
-  end
+  local b_id = normalize_browse_id(pid)
 
   transport.ensure_visitor_data()
   local ok, data = pcall(transport.post_music, "browse", { browseId = b_id }, constants.CLIENT_WEB_REMIX)
@@ -177,14 +185,17 @@ end
 
 local cached_favs = nil
 local cached_favs_time = 0
+local cached_favs_token = nil
 
 --- 专辑详情业务
 function catalog_service.album(album_id)
   local aid = tostring(album_id or "")
   if string.len(aid) == 0 then return nil end
 
+  local b_id = normalize_browse_id(aid)
+
   transport.ensure_visitor_data()
-  local ok, data = pcall(transport.post_music, "browse", { browseId = aid }, constants.CLIENT_WEB_REMIX)
+  local ok, data = pcall(transport.post_music, "browse", { browseId = b_id }, constants.CLIENT_WEB_REMIX)
   if not ok or not data then return nil end
 
   local header = browse_parser.parse_playlist_header(data, aid)
@@ -210,8 +221,10 @@ function catalog_service.artist(artist_id)
   local aid = tostring(artist_id or "")
   if string.len(aid) == 0 then return nil end
 
+  local b_id = normalize_browse_id(aid)
+
   transport.ensure_visitor_data()
-  local ok, data = pcall(transport.post_music, "browse", { browseId = aid }, constants.CLIENT_WEB_REMIX)
+  local ok, data = pcall(transport.post_music, "browse", { browseId = b_id }, constants.CLIENT_WEB_REMIX)
   if not ok or not data then return nil end
 
   local hdr = nav.nav(data, { "header", "musicImmersiveHeaderRenderer" })
@@ -234,7 +247,25 @@ end
 
 --- 歌手热门歌曲列表业务
 function catalog_service.artist_songs(artist_id, limit, offset)
-  return catalog_service.playlist_songs(artist_id, limit, offset)
+  local aid = tostring(artist_id or "")
+  if string.len(aid) == 0 then return {} end
+
+  local b_id = normalize_browse_id(aid)
+
+  transport.ensure_visitor_data()
+  local ok, data = pcall(transport.post_music, "browse", { browseId = b_id }, constants.CLIENT_WEB_REMIX)
+  if not ok or not data then return {} end
+
+  local songs = browse_parser.parse_artist_songs(data)
+  local take = tonumber(limit) or 50
+  local skip = tonumber(offset) or 0
+
+  local paged = {}
+  for i = skip + 1, math.min(#songs, skip + take) do
+    table.insert(paged, songs[i])
+  end
+
+  return paged
 end
 
 --- 我喜欢的音乐 (VLLM)
@@ -252,45 +283,40 @@ function catalog_service.favorites(args)
   end
 
   local now = os.time()
-  -- 若缓存为空，或超过 60 秒且是第 1 页请求，重新全量同步
-  if not cached_favs or (now - cached_favs_time > 60 and offset == 0) then
+  -- 若是首屏 offset == 0，或者缓存已失效（> 120 秒）
+  if offset == 0 or not cached_favs or (now - cached_favs_time > 120) then
     local payload = {
       browseId = "VLLM"
     }
     local ok, data = pcall(transport.post_music, "browse", payload, constants.CLIENT_WEB_REMIX)
     if ok and data then
       local songs, next_token = browse_parser.parse_favorites(data)
-      local all_songs = songs or {}
-      local seen = {}
-      for _, s in ipairs(all_songs) do seen[s.id] = true end
-
-      -- 遍历 continuation tokens，拉取 100 首以后的全部收藏曲目
-      local loop_count = 0
-      while next_token and loop_count < 15 do
-        loop_count = loop_count + 1
-        local cont_payload = { continuation = next_token }
-        local c_ok, c_data = pcall(transport.post_music, "browse", cont_payload, constants.CLIENT_WEB_REMIX)
-        if c_ok and c_data then
-          local more_songs, new_token = browse_parser.parse_continuation_songs(c_data, seen)
-          if more_songs and #more_songs > 0 then
-            for _, s in ipairs(more_songs) do
-              table.insert(all_songs, s)
-            end
-          else
-            break
-          end
-          next_token = new_token
-        else
-          break
-        end
-      end
-
-      cached_favs = all_songs
+      cached_favs = songs or {}
+      cached_favs_token = next_token
       cached_favs_time = now
     end
   end
 
   cached_favs = cached_favs or {}
+
+  -- 若请求的 offset 达到了当前缓存末尾，且存在后续 continuation 令牌，执行单次增量续拉
+  if offset >= #cached_favs and cached_favs_token then
+    local cont_payload = { continuation = cached_favs_token }
+    local c_ok, c_data = pcall(transport.post_music, "browse", cont_payload, constants.CLIENT_WEB_REMIX)
+    if c_ok and c_data then
+      local seen = {}
+      for _, s in ipairs(cached_favs) do seen[s.id] = true end
+      local more_songs, new_token = browse_parser.parse_continuation_songs(c_data, seen)
+      if more_songs and #more_songs > 0 then
+        for _, s in ipairs(more_songs) do
+          table.insert(cached_favs, s)
+        end
+      end
+      cached_favs_token = new_token
+    else
+      cached_favs_token = nil
+    end
+  end
 
   local paged = {}
   for i = offset + 1, math.min(#cached_favs, offset + limit) do
