@@ -223,6 +223,17 @@ function catalog_service.artist(artist_id)
 
   local b_id = normalize_browse_id(aid)
 
+  -- 若传入的是虚拟 ID (如历史生成的 yt_artist_<vid>)，通过 player 反查真实 channelId
+  if string.sub(b_id, 1, 10) == "yt_artist_" then
+    local vid = string.sub(b_id, 11)
+    if string.len(vid) == 11 then
+      local p_ok, p_res = pcall(transport.post_youtube, "player?prettyPrint=false", { videoId = vid }, constants.CLIENT_VISIONOS)
+      if p_ok and p_res and p_res.videoDetails and p_res.videoDetails.channelId then
+        b_id = p_res.videoDetails.channelId
+      end
+    end
+  end
+
   transport.ensure_visitor_data()
   local ok, data = pcall(transport.post_music, "browse", { browseId = b_id }, constants.CLIENT_WEB_REMIX)
   if not ok or not data then return nil end
@@ -237,11 +248,22 @@ function catalog_service.artist_songs(artist_id, limit, offset)
 
   local b_id = normalize_browse_id(aid)
 
+  -- 若传入的是虚拟 ID (如历史生成的 yt_artist_<vid>)，通过 player 反查真实 channelId
+  if string.sub(b_id, 1, 10) == "yt_artist_" then
+    local vid = string.sub(b_id, 11)
+    if string.len(vid) == 11 then
+      local p_ok, p_res = pcall(transport.post_youtube, "player?prettyPrint=false", { videoId = vid }, constants.CLIENT_VISIONOS)
+      if p_ok and p_res and p_res.videoDetails and p_res.videoDetails.channelId then
+        b_id = p_res.videoDetails.channelId
+      end
+    end
+  end
+
   transport.ensure_visitor_data()
   local ok, data = pcall(transport.post_music, "browse", { browseId = b_id }, constants.CLIENT_WEB_REMIX)
   if not ok or not data then return {} end
 
-  local songs = browse_parser.parse_artist_songs(data)
+  local songs = browse_parser.parse_artist_songs(data, aid)
   local take = tonumber(limit) or 50
   local skip = tonumber(offset) or 0
 
@@ -269,16 +291,31 @@ function catalog_service.favorites(args)
 
   local now = os.time()
   -- 若是首屏 offset == 0，或者缓存已失效（> 120 秒）
-  if offset == 0 or not cached_favs or (now - cached_favs_time > 120) then
+  if offset == 0 or not cached_favs or #cached_favs == 0 or (now - cached_favs_time > 120) then
     local payload = {
       browseId = "VLLM"
     }
     local ok, data = pcall(transport.post_music, "browse", payload, constants.CLIENT_WEB_REMIX)
+    if not ok or not data then
+      -- 失败时立即重试 1 次防抖
+      ok, data = pcall(transport.post_music, "browse", payload, constants.CLIENT_WEB_REMIX)
+    end
     if ok and data then
       local songs, next_token = browse_parser.parse_favorites(data)
-      cached_favs = songs or {}
-      cached_favs_token = next_token
-      cached_favs_time = now
+      if songs and #songs > 0 then
+        cached_favs = songs
+        cached_favs_token = next_token
+        cached_favs_time = now
+        pcall(store.set, "cached_favs_snapshot", cached_favs)
+      end
+    else
+      -- 若网络临时抖动，从本地磁盘快照恢复
+      if not cached_favs or #cached_favs == 0 then
+        local s_ok, saved = pcall(store.get, "cached_favs_snapshot")
+        if s_ok and saved and type(saved) == "table" and #saved > 0 then
+          cached_favs = saved
+        end
+      end
     end
   end
 

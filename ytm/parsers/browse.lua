@@ -9,6 +9,7 @@ function browse_parser.parse_song_details(res, vid)
   local dur_s = tonumber(vd.lengthSeconds) or 0
   local title = (vd.title and string.len(vd.title) > 0) and vd.title or ("YouTube Song (" .. vid .. ")")
   local author = (vd.author and string.len(vd.author) > 0) and vd.author or "YouTube Music"
+  local channel_id = (vd.channelId and string.len(vd.channelId) > 0) and vd.channelId or ("yt_artist_" .. vid)
 
   local cover_url = ""
   if vd.thumbnail and vd.thumbnail.thumbnails and #vd.thumbnail.thumbnails > 0 then
@@ -22,7 +23,7 @@ function browse_parser.parse_song_details(res, vid)
     id = vid,
     title = title,
     artists = {
-      { id = "yt_artist_" .. vid, name = author, coverUrl = "" }
+      { id = channel_id, name = author, coverUrl = "" }
     },
     albumName = "YouTube Music",
     coverUrl = cover_url,
@@ -99,25 +100,12 @@ function browse_parser.parse_continuation_songs(data, seen_songs)
   return songs, next_token
 end
 
---- 解析首页 FEmusic_home 推荐流，对齐 Lazer MusicHome 数据契约
-function browse_parser.parse_home_feed(data)
-  local feed = {
-    quick = {},
-    daily = {},
-    recommended = {},
-    playlists = {},
-    albums = {},
-    editorialPlaylists = {},
-    userMixes = {}
-  }
-  if not data or type(data) ~= "table" then return feed end
-
-  local tabs = nav.nav(data, { "contents", "singleColumnBrowseResultsRenderer", "tabs" }) or {}
-  local sec_list = nav.nav(tabs, { 1, "tabRenderer", "content", "sectionListRenderer", "contents" }) or {}
-
-  local seen_pl = {}
-  local seen_alb = {}
-  local seen_songs = {}
+--- 解析 Section 列表并填充到 feed 结构中
+function browse_parser.parse_home_sections(sec_list, feed, seen_pl, seen_alb, seen_songs)
+  if not sec_list or type(sec_list) ~= "table" or not feed then return end
+  seen_pl = seen_pl or {}
+  seen_alb = seen_alb or {}
+  seen_songs = seen_songs or {}
 
   for _, sec in ipairs(sec_list) do
     local carousel = sec.musicCarouselShelfRenderer
@@ -147,6 +135,7 @@ function browse_parser.parse_home_feed(data)
                              or (string.find(title, "合辑") ~= nil)
                              or (string.find(title, "Mix") ~= nil)
                              or (string.find(title, "Supermix") ~= nil)
+                             or (string.find(title, "ミックス") ~= nil)
 
             local is_playlist = is_user_mix
                              or (page_type == "MUSIC_PAGE_TYPE_PLAYLIST")
@@ -219,6 +208,48 @@ function browse_parser.parse_home_feed(data)
       end
     end
   end
+end
+
+--- 解析首页延续响应 (Continuation)，深度提取合辑与推荐
+function browse_parser.parse_home_continuation(cont_data, feed)
+  if not cont_data or not feed then return end
+  local cont_secs = nav.nav(cont_data, { "continuationContents", "sectionListContinuation", "contents" })
+                 or nav.nav(cont_data, { "contents", "sectionListRenderer", "contents" })
+                 or {}
+  local seen_pl = {}
+  for _, p in ipairs(feed.playlists or {}) do seen_pl[p.id] = true end
+  local seen_alb = {}
+  for _, a in ipairs(feed.albums or {}) do seen_alb[a.id] = true end
+  local seen_songs = {}
+  for _, s in ipairs(feed.quick or {}) do seen_songs[s.id] = true end
+
+  browse_parser.parse_home_sections(cont_secs, feed, seen_pl, seen_alb, seen_songs)
+end
+
+--- 解析首页 FEmusic_home 推荐流，对齐 Lazer MusicHome 数据契约
+function browse_parser.parse_home_feed(data)
+  local feed = {
+    quick = {},
+    daily = {},
+    recommended = {},
+    playlists = {},
+    albums = {},
+    editorialPlaylists = {},
+    userMixes = {},
+    continuation = nil
+  }
+  if not data or type(data) ~= "table" then return feed end
+
+  local tabs = nav.nav(data, { "contents", "singleColumnBrowseResultsRenderer", "tabs" }) or {}
+  local sec_list_renderer = nav.nav(tabs, { 1, "tabRenderer", "content", "sectionListRenderer" }) or {}
+  local sec_list = sec_list_renderer.contents or {}
+  feed.continuation = nav.nav(sec_list_renderer, { "continuations", 1, "nextContinuationData", "continuation" })
+
+  local seen_pl = {}
+  local seen_alb = {}
+  local seen_songs = {}
+
+  browse_parser.parse_home_sections(sec_list, feed, seen_pl, seen_alb, seen_songs)
 
   return feed
 end
@@ -372,7 +403,7 @@ function browse_parser.parse_playlist_songs(data)
 end
 
 --- 解析歌手主页的热门歌曲列表 (Top songs)
-function browse_parser.parse_artist_songs(data)
+function browse_parser.parse_artist_songs(data, artist_id)
   local songs = {}
   if not data or type(data) ~= "table" then return songs end
 
@@ -396,7 +427,43 @@ function browse_parser.parse_artist_songs(data)
     end
   end
 
-  -- 2. 若未找到，回退到全局寻找
+  -- 2. 若未找到 (如 Topic 频道通常没有 musicShelfRenderer)，从所有 Carousel 货架中提取单曲
+  if #songs == 0 then
+    for _, sec in ipairs(sec_list) do
+      local carousel = sec.musicCarouselShelfRenderer
+      if carousel and carousel.contents then
+        for _, it in ipairs(carousel.contents) do
+          local r = it.musicResponsiveListItemRenderer or it.musicTwoRowItemRenderer
+          if r then
+            local watch_ep = nav.nav(r, { "navigationEndpoint", "watchEndpoint" })
+                          or nav.nav(r, { "flexColumns", 1, "musicResponsiveListItemFlexColumnRenderer", "text", "runs", 1, "navigationEndpoint", "watchEndpoint" })
+            local vid = watch_ep and watch_ep.videoId
+            if vid and string.len(vid) == 11 and not seen_songs[vid] then
+              seen_songs[vid] = true
+              local t_runs = (r.title and r.title.runs)
+                          or (r.flexColumns and r.flexColumns[1] and r.flexColumns[1].musicResponsiveListItemFlexColumnRenderer and r.flexColumns[1].musicResponsiveListItemFlexColumnRenderer.text and r.flexColumns[1].musicResponsiveListItemFlexColumnRenderer.text.runs)
+                          or {}
+              local t_title = t_runs[1] and t_runs[1].text or ("Song " .. vid)
+              local thumbs = nav.nav(r, { "thumbnailRenderer", "musicThumbnailRenderer", "thumbnail", "thumbnails" })
+                          or nav.nav(r, { "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails" })
+              local cover = thumbs and nav.extract_thumbnail(thumbs) or ("https://i.ytimg.com/vi/" .. vid .. "/hqdefault.jpg")
+              table.insert(songs, {
+                id = vid,
+                title = t_title,
+                artists = { { id = tostring(artist_id or ""), name = "Artist", coverUrl = "" } },
+                albumName = "YouTube Music",
+                coverUrl = cover,
+                durationMs = 0
+              })
+            end
+          end
+        end
+      end
+      if #songs >= 30 then break end
+    end
+  end
+
+  -- 3. 终极回退：全局搜索所有 music_items
   if #songs == 0 then
     local music_items = {}
     nav.find_music_items(data, music_items)
@@ -469,8 +536,17 @@ function browse_parser.parse_artist(data, artist_id)
 
   local hdr = nav.nav(data, { "header", "musicImmersiveHeaderRenderer" })
            or nav.nav(data, { "header", "musicVisualHeaderRenderer" })
+           or nav.nav(data, { "header", "musicHeaderRenderer" })
+           or nav.nav(data, { "header", "c4TabbedHeaderRenderer" })
            or {}
-  local name = nav.nav(hdr, { "title", "runs", 1, "text" }) or "Artist"
+  local name = nav.nav(hdr, { "title", "runs", 1, "text" })
+            or nav.nav(hdr, { "title", "simpleText" })
+            or nav.nav(data, { "microformat", "microformatDataRenderer", "title" })
+            or "Artist"
+
+  -- 净化自动生成的 " - Topic" 后缀
+  name = string.gsub(name, "%s*-[%s]*Topic$", "")
+
   local desc = browse_parser.extract_artist_description(hdr.description)
 
   -- 若头部未附带完整简介，从底部的 musicDescriptionShelfRenderer 深度提取
@@ -489,6 +565,7 @@ function browse_parser.parse_artist(data, artist_id)
 
   local cover_url = ""
   local thumbs = nav.nav(hdr, { "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails" })
+              or nav.nav(hdr, { "foregroundThumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails" })
   if thumbs then cover_url = nav.extract_thumbnail(thumbs) end
 
   return {

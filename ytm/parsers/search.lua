@@ -46,7 +46,7 @@ local function clean_song_title(title, query)
 end
 
 --- 解析单个 musicResponsiveListItemRenderer 为歌曲对象
-function search_parser.parse_song_item(it, query, seen_songs)
+function search_parser.parse_song_item(it, query, seen_songs, default_artist)
   if not it or type(it) ~= "table" then return nil end
 
   local vid = nav.nav(it, { "playlistItemData", "videoId" })
@@ -118,7 +118,22 @@ function search_parser.parse_song_item(it, query, seen_songs)
           album_id = b_id
         else
           local ms = nav.parse_time_to_ms(t)
-          if ms > 0 then dur_ms = ms end
+          if ms > 0 then
+            dur_ms = ms
+          else
+            local trimmed = nav.trim_str(t)
+            if string.len(trimmed) > 0 and trimmed ~= "•" and trimmed ~= "·" and trimmed ~= "・"
+               and trimmed ~= "歌曲" and trimmed ~= "单曲" and trimmed ~= "视频" and trimmed ~= "Song" and trimmed ~= "Video"
+               and trimmed ~= "曲" and trimmed ~= "動画" then
+              if #song_artists == 0 and (not b_id or b_id == "") then
+                table.insert(song_artists, {
+                  id = "yt_artist_" .. vid,
+                  name = trimmed,
+                  coverUrl = ""
+                })
+              end
+            end
+          end
         end
       end
     end
@@ -141,11 +156,27 @@ function search_parser.parse_song_item(it, query, seen_songs)
   end
 
   if #song_artists == 0 then
-    table.insert(song_artists, {
-      id = "yt_artist_" .. vid,
-      name = "YouTube Music",
-      coverUrl = ""
-    })
+    if default_artist then
+      if type(default_artist) == "table" then
+        table.insert(song_artists, {
+          id = default_artist.id or ("yt_artist_" .. vid),
+          name = default_artist.name or "YouTube Music",
+          coverUrl = default_artist.coverUrl or ""
+        })
+      else
+        table.insert(song_artists, {
+          id = "yt_artist_" .. vid,
+          name = tostring(default_artist),
+          coverUrl = ""
+        })
+      end
+    else
+      table.insert(song_artists, {
+        id = "yt_artist_" .. vid,
+        name = "YouTube Music",
+        coverUrl = ""
+      })
+    end
   end
 
   if seen_songs then seen_songs[vid] = true end
@@ -202,7 +233,14 @@ function search_parser.parse_search_results(data, query)
 
     card_title = nav.trim_str(card_title)
     if string.len(card_title) > 0 then
-      if card_pt == "MUSIC_PAGE_TYPE_ARTIST" or (card_bid and string.sub(card_bid, 1, 2) == "UC") or string.find(card_sub, "音乐人") or string.find(card_sub, "歌手") or string.find(card_sub, "Artist") then
+      local card_is_artist = (card_pt == "MUSIC_PAGE_TYPE_ARTIST")
+                          or (card_bid and string.sub(card_bid, 1, 2) == "UC")
+                          or (card_sub and (string.find(card_sub, "音乐人") or string.find(card_sub, "歌手") or string.find(card_sub, "Artist") or string.find(card_sub, "アーティスト")))
+      local card_is_album = (card_pt == "MUSIC_PAGE_TYPE_ALBUM")
+                         or (card_bid and string.sub(card_bid, 1, 6) == "MPREb_")
+                         or (card_sub and (string.find(card_sub, "专辑") or string.find(card_sub, "EP") or string.find(card_sub, "Album") or string.find(card_sub, "アルバム")))
+
+      if card_is_artist then
         local art_id = card_bid or ("yt_artist_" .. card_title)
         seen_artists[art_id] = true
         table.insert(artists, {
@@ -210,7 +248,7 @@ function search_parser.parse_search_results(data, query)
           name = card_title,
           coverUrl = card_cover
         })
-      elseif card_pt == "MUSIC_PAGE_TYPE_ALBUM" or (card_bid and string.sub(card_bid, 1, 6) == "MPREb_") or string.find(card_sub, "专辑") or string.find(card_sub, "EP") or string.find(card_sub, "Album") then
+      elseif card_is_album then
         local alb_id = card_bid or ("yt_album_" .. card_title)
         seen_albums[alb_id] = true
         table.insert(albums, {
@@ -221,6 +259,21 @@ function search_parser.parse_search_results(data, query)
           artists = { { id = "yt_artist_unk", name = card_sub ~= "" and card_sub or "YouTube Music" } },
           songCount = 0
         })
+      end
+    end
+
+    -- 0.1 提取卡片内挂载的热门歌曲，绑定该歌手身份
+    local card_artist = (string.len(card_title) > 0 and ((card_pt == "MUSIC_PAGE_TYPE_ARTIST") or (card_bid and string.sub(card_bid, 1, 2) == "UC") or (card_sub and (string.find(card_sub, "音乐人") or string.find(card_sub, "歌手") or string.find(card_sub, "Artist") or string.find(card_sub, "アーティスト")))))
+                    and { id = card_bid or ("yt_artist_" .. card_title), name = card_title, coverUrl = card_cover }
+                    or nil
+
+    if card.contents and #card.contents > 0 then
+      for _, it in ipairs(card.contents) do
+        local r = it.musicResponsiveListItemRenderer
+        if r then
+          local s = search_parser.parse_song_item(r, query, seen_songs, card_artist)
+          if s then table.insert(songs, s) end
+        end
       end
     end
   end
@@ -276,15 +329,15 @@ function search_parser.parse_search_results(data, query)
 
     local is_artist = (page_type == "MUSIC_PAGE_TYPE_ARTIST")
                    or (browse_id and string.sub(browse_id, 1, 2) == "UC")
-                   or (type_label == "音乐人" or type_label == "歌手" or type_label == "Artist")
+                   or (type_label == "音乐人" or type_label == "歌手" or type_label == "Artist" or type_label == "アーティスト")
 
     local is_album = (page_type == "MUSIC_PAGE_TYPE_ALBUM")
                   or (browse_id and string.sub(browse_id, 1, 6) == "MPREb_")
-                  or (type_label == "专辑" or type_label == "EP" or type_label == "单曲" or type_label == "Album")
+                  or (type_label == "专辑" or type_label == "EP" or type_label == "单曲" or type_label == "Album" or type_label == "アルバム")
 
     local is_playlist = (page_type == "MUSIC_PAGE_TYPE_PLAYLIST")
                      or (browse_id and (string.sub(browse_id, 1, 2) == "VL" or string.sub(browse_id, 1, 2) == "PL"))
-                     or (type_label == "播放列表" or type_label == "歌单" or type_label == "Playlist")
+                     or (type_label == "播放列表" or type_label == "歌单" or type_label == "Playlist" or type_label == "プレイリスト")
 
     if is_artist then
       local art_id = browse_id or ("yt_artist_" .. title)
@@ -325,7 +378,7 @@ function search_parser.parse_search_results(data, query)
         })
       end
     else
-      local s = search_parser.parse_song_item(it, query, seen_songs)
+      local s = search_parser.parse_song_item(it, query, seen_songs, card_artist)
       if s then table.insert(songs, s) end
     end
   end

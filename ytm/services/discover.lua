@@ -13,7 +13,7 @@ local OFFICIAL_FALLBACK_MIXES = {
     id = "RDTMAK5uy_kset8DisdE7LSD4TNjEVnkKRTmG7a562Y8",
     name = "我的超级合辑",
     description = "专属个性化音乐合辑，汇聚你最喜爱的歌手与曲风",
-    coverUrl = "https://www.gstatic.com/youtube/media/ytm/images/pda_mix_art/cover_my_supermix_3.png",
+    coverUrl = "https://cdn.jsdelivr.net/gh/VincentZyu233/lazer-plugin-youtube@main/assets/covers/cover_supermix.png",
     songCount = 0,
     owner = "YouTube Music"
   },
@@ -21,7 +21,7 @@ local OFFICIAL_FALLBACK_MIXES = {
     id = "RDTMAK5uy_m_jQ6oU5_130iJbN95_W4jWqQ7c-kC_rM",
     name = "发现合辑",
     description = "每周为你推荐新鲜好歌与潜在喜好",
-    coverUrl = "https://www.gstatic.com/youtube/media/ytm/images/pda_mix_art/cover_discover_mix_2.png",
+    coverUrl = "https://cdn.jsdelivr.net/gh/VincentZyu233/lazer-plugin-youtube@main/assets/covers/cover_discover_mix.png",
     songCount = 0,
     owner = "YouTube Music"
   },
@@ -29,7 +29,7 @@ local OFFICIAL_FALLBACK_MIXES = {
     id = "RDTMAK5uy_ksxU4WqD24u_Xk_hZfXQ65m7R3Z9Z6w",
     name = "重放合辑",
     description = "重温你近期反复聆听的挚爱旋律",
-    coverUrl = "https://www.gstatic.com/youtube/media/ytm/images/pda_mix_art/cover_replay_mix_2.png",
+    coverUrl = "https://cdn.jsdelivr.net/gh/VincentZyu233/lazer-plugin-youtube@main/assets/covers/cover_replay_mix.png",
     songCount = 0,
     owner = "YouTube Music"
   },
@@ -37,7 +37,7 @@ local OFFICIAL_FALLBACK_MIXES = {
     id = "RDTMAK5uy_l43N1o_GZJ25u1_Xq_hZfXQ65m7R3Z9Z6w",
     name = "新歌合辑",
     description = "为你喜爱的音乐人追踪最新发行",
-    coverUrl = "https://www.gstatic.com/youtube/media/ytm/images/pda_mix_art/cover_new_release_mix_2.png",
+    coverUrl = "https://cdn.jsdelivr.net/gh/VincentZyu233/lazer-plugin-youtube@main/assets/covers/cover_archive_mix.png",
     songCount = 0,
     owner = "YouTube Music"
   }
@@ -52,7 +52,15 @@ function discover_service.home_feed()
   local data = transport.post_music("browse", payload, constants.CLIENT_WEB_REMIX)
   local feed = browse_parser.parse_home_feed(data)
 
-  -- 1. 更新或提取用户专属 Mix 快照 (归档合辑/重放合辑/发现合辑/新歌合辑)
+  -- 0. 若首屏未解析到专属合辑，发起 1 次延续请求（Continuation）深度提取用户专属合辑（如“新しい曲や過去のお気に入り” / “Mixed for you”）
+  if #feed.userMixes == 0 and feed.continuation and string.len(feed.continuation) > 0 then
+    local ok, cont_data = pcall(transport.post_music, "browse?continuation=" .. feed.continuation, { continuation = feed.continuation }, constants.CLIENT_WEB_REMIX)
+    if ok and cont_data then
+      browse_parser.parse_home_continuation(cont_data, feed)
+    end
+  end
+
+  -- 1. 更新或提取用户专属 Mix 快照 (归档合辑/重放合辑/发现合辑/新歌合辑/Mixart)
   if feed.userMixes and #feed.userMixes > 0 then
     cached_user_mixes = feed.userMixes
     pcall(store.set, "cached_user_mixes", cached_user_mixes)
@@ -74,18 +82,22 @@ function discover_service.home_feed()
     active_mixes = OFFICIAL_FALLBACK_MIXES
   end
 
-  -- 3. 稳稳置顶在 editorialPlaylists，主页中段 100% 稳定呈现 YouTube 官方 mixart 几何艺术封面
-  local existing_ids = {}
-  for _, p in ipairs(feed.editorialPlaylists) do
-    existing_ids[p.id] = true
-  end
-  for i = #active_mixes, 1, -1 do
-    local mix = active_mixes[i]
-    if not existing_ids[mix.id] then
-      existing_ids[mix.id] = true
-      table.insert(feed.editorialPlaylists, 1, mix)
+  -- 3. 稳稳置顶在 editorialPlaylists，主页中段 100% 稳定呈现 YouTube 官方下发的 mixart 动态封面
+  local new_editorial = {}
+  local seen_editorial = {}
+  for _, mix in ipairs(active_mixes) do
+    if not seen_editorial[mix.id] then
+      seen_editorial[mix.id] = true
+      table.insert(new_editorial, mix)
     end
   end
+  for _, pl in ipairs(feed.editorialPlaylists) do
+    if not seen_editorial[pl.id] then
+      seen_editorial[pl.id] = true
+      table.insert(new_editorial, pl)
+    end
+  end
+  feed.editorialPlaylists = new_editorial
 
   -- 3. 若首屏未直接给出单曲卡片，取推荐第 1 歌单的曲目填充 quick 与 daily (单次快速请求)
   --    这样 Lazer 顶部的“每日推荐”与底部的“为你创建的电台”将拥有饱满的单曲封面供 _MovingCoverMosaic 平移！

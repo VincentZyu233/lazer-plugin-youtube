@@ -69,10 +69,10 @@ def test_home_feed_mixart_persistence():
 
     # 模拟 discover_service.home_feed()
     OFFICIAL_FALLBACK_MIXES = [
-        {"id": "RDTMAK5uy_kset8DisdE7LSD4TNjEVnkKRTmG7a562Y8", "name": "我的超级合辑", "coverUrl": "https://www.gstatic.com/youtube/media/ytm/images/pda_mix_art/cover_my_supermix_3.png"},
-        {"id": "RDTMAK5uy_m_jQ6oU5_130iJbN95_W4jWqQ7c-kC_rM", "name": "发现合辑", "coverUrl": "https://www.gstatic.com/youtube/media/ytm/images/pda_mix_art/cover_discover_mix_2.png"},
-        {"id": "RDTMAK5uy_ksxU4WqD24u_Xk_hZfXQ65m7R3Z9Z6w", "name": "重放合辑", "coverUrl": "https://www.gstatic.com/youtube/media/ytm/images/pda_mix_art/cover_replay_mix_2.png"},
-        {"id": "RDTMAK5uy_l43N1o_GZJ25u1_Xq_hZfXQ65m7R3Z9Z6w", "name": "新歌合辑", "coverUrl": "https://www.gstatic.com/youtube/media/ytm/images/pda_mix_art/cover_new_release_mix_2.png"}
+        {"id": "RDTMAK5uy_kset8DisdE7LSD4TNjEVnkKRTmG7a562Y8", "name": "我的超级合辑", "coverUrl": "https://cdn.jsdelivr.net/gh/VincentZyu233/lazer-plugin-youtube@main/assets/covers/cover_supermix.png"},
+        {"id": "RDTMAK5uy_m_jQ6oU5_130iJbN95_W4jWqQ7c-kC_rM", "name": "发现合辑", "coverUrl": "https://cdn.jsdelivr.net/gh/VincentZyu233/lazer-plugin-youtube@main/assets/covers/cover_discover_mix.png"},
+        {"id": "RDTMAK5uy_ksxU4WqD24u_Xk_hZfXQ65m7R3Z9Z6w", "name": "重放合辑", "coverUrl": "https://cdn.jsdelivr.net/gh/VincentZyu233/lazer-plugin-youtube@main/assets/covers/cover_replay_mix.png"},
+        {"id": "RDTMAK5uy_l43N1o_GZJ25u1_Xq_hZfXQ65m7R3Z9Z6w", "name": "新歌合辑", "coverUrl": "https://cdn.jsdelivr.net/gh/VincentZyu233/lazer-plugin-youtube@main/assets/covers/cover_archive_mix.png"}
     ]
 
     assert len(OFFICIAL_FALLBACK_MIXES) == 4
@@ -84,6 +84,29 @@ def test_home_feed_mixart_persistence():
     print(">>> HOME MIXART FALLBACK TEST PASSED <<<")
 
 
+def test_home_feed_continuation_and_mixart():
+    print("\n==========================================")
+    print(" [TEST HOME CONTINUATION] Mixart & Dynamic Feeds")
+    print("==========================================")
+
+    url = f"{HOST_MUSIC}/youtubei/v1/browse"
+    data = post_innertube(url, {"browseId": "FEmusic_home"}, CLIENT_WEB_REMIX)
+    assert data, "Home feed data is empty"
+
+    tabs = data.get("contents", {}).get("singleColumnBrowseResultsRenderer", {}).get("tabs", [])
+    assert len(tabs) > 0, "No tabs found in home feed"
+    sl = tabs[0].get("tabRenderer", {}).get("content", {}).get("sectionListRenderer", {})
+    conts = sl.get("continuations", [])
+    print(f"Continuations found on home feed: {len(conts)}")
+    if conts:
+        token = conts[0].get("nextContinuationData", {}).get("continuation")
+        assert token and len(token) > 0, "Continuation token is empty"
+        print(f"  Continuation token: {token[:30]}...")
+
+    print(">>> HOME CONTINUATION TEST PASSED <<<")
+
+
 if __name__ == "__main__":
     test_artist_description_and_songs()
     test_home_feed_mixart_persistence()
+    test_home_feed_continuation_and_mixart()
