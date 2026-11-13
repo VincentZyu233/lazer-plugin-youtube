@@ -20,6 +20,8 @@ local function clean_song_title(title, query)
   clean = string.gsub(clean, "%s*%(ft%.?[^%)]*%)", "")
   clean = string.gsub(clean, "%s*（feat%.?[^）]*）", "")
   clean = string.gsub(clean, "%s*（ft%.?[^）]*）", "")
+  clean = string.gsub(clean, "%s+[Cc]over%s*.*$", "")
+  clean = string.gsub(clean, "%s*歌ってみた.*$", "")
   clean = nav.trim_str(clean)
 
   -- 3. 分割处理复合标题 "A - B" 或 "A / B" (常见于 "日文名 - 英文译名" 或 "中文名 - 英文名")

@@ -1,7 +1,7 @@
 {
   "id": "lazer.youtube",
   "name": "YouTube Music",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "专为 Lazer 打造的 YouTube & YouTube Music Lua Gateway 插件，支持精准毫秒级逐行滚动歌词与高清音频流。",
   "author": "VincentZyu",
   "entry": "main.lua",
@@ -30,7 +30,9 @@
       "*.ytimg.com",
       "*.googleusercontent.com",
       "*.google.com",
-      "google.com"
+      "google.com",
+      "cdn.jsdelivr.net",
+      "raw.githubusercontent.com"
     ],
     "storage": true
   }

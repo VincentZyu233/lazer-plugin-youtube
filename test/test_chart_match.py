@@ -14,6 +14,8 @@ def clean_song_title(title, query):
     clean = re.sub(r'^[【\[][^】\]]*[】\]]\s*', '', clean)
     clean = re.sub(r'\s*[【\[][^】\]]*[】\]]$', '', clean)
     clean = re.sub(r'\s*[（\(](?:合作音乐人[：:].*?|feat\.?.*?|ft\.?.*?)[）\)]', '', clean, flags=re.IGNORECASE)
+    clean = re.sub(r'\s+cover\s*.*$', '', clean, flags=re.IGNORECASE)
+    clean = re.sub(r'\s*歌ってみた.*$', '', clean)
     clean = clean.strip()
     
     m = re.match(r'^(.*?)\s+[-/]\s+(.+)$', clean)

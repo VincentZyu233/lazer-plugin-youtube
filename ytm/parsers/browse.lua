@@ -3,6 +3,24 @@ local search_parser = require("ytm.parsers.search")
 
 local browse_parser = {}
 
+--- 针对缺失官方独立封面的专属系统合集（如重放/发现/归档/超级混音），匹配高颜值语义徽标
+function browse_parser.resolve_curated_mix_cover(title, original_thumb)
+  if original_thumb and string.len(original_thumb) > 0 then
+    return original_thumb
+  end
+  local t_lower = string.lower(title or "")
+  if string.find(t_lower, "归档") or string.find(t_lower, "archive") then
+    return "https://cdn.jsdelivr.net/gh/VincentZyu233/lazer-plugin-youtube@main/assets/covers/cover_archive_mix.png"
+  elseif string.find(t_lower, "重放") or string.find(t_lower, "replay") then
+    return "https://cdn.jsdelivr.net/gh/VincentZyu233/lazer-plugin-youtube@main/assets/covers/cover_replay_mix.png"
+  elseif string.find(t_lower, "发现") or string.find(t_lower, "discover") then
+    return "https://cdn.jsdelivr.net/gh/VincentZyu233/lazer-plugin-youtube@main/assets/covers/cover_discover_mix.png"
+  elseif string.find(t_lower, "超级") or string.find(t_lower, "supermix") then
+    return "https://cdn.jsdelivr.net/gh/VincentZyu233/lazer-plugin-youtube@main/assets/covers/cover_supermix.png"
+  end
+  return original_thumb or ""
+end
+
 --- 解析 player 响应中的 videoDetails 为 Song 基础元数据
 function browse_parser.parse_song_details(res, vid)
   local vd = (res and res.videoDetails) or {}
@@ -91,6 +109,7 @@ function browse_parser.parse_home_feed(data)
           local thumb = ""
           local thumbs = nav.nav(r, { "thumbnailRenderer", "musicThumbnailRenderer", "thumbnail", "thumbnails" })
           if thumbs then thumb = nav.extract_thumbnail(thumbs) end
+          thumb = browse_parser.resolve_curated_mix_cover(title, thumb)
 
           if b_id and string.len(title) > 0 then
             local is_playlist = (page_type == "MUSIC_PAGE_TYPE_PLAYLIST")
@@ -169,6 +188,7 @@ function browse_parser.parse_charts(data)
           local thumb = ""
           local thumbs = nav.nav(r, { "thumbnailRenderer", "musicThumbnailRenderer", "thumbnail", "thumbnails" })
           if thumbs then thumb = nav.extract_thumbnail(thumbs) end
+          thumb = browse_parser.resolve_curated_mix_cover(title, thumb)
 
           if b_id and string.len(title) > 0 and not seen_charts[b_id] then
             seen_charts[b_id] = true
@@ -248,6 +268,7 @@ function browse_parser.parse_playlist_header(data, playlist_id)
   local cover_url = ""
   local thumbs = hdr and nav.nav(hdr, { "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails" })
   if thumbs then cover_url = nav.extract_thumbnail(thumbs) end
+  cover_url = browse_parser.resolve_curated_mix_cover(name, cover_url)
 
   return {
     id = playlist_id,

@@ -124,7 +124,17 @@ function catalog_service.playlist(playlist_id)
 
   transport.ensure_visitor_data()
   local data = transport.post_music("browse", { browseId = b_id }, constants.CLIENT_WEB_REMIX)
-  return browse_parser.parse_playlist_header(data, pid)
+  local pl = browse_parser.parse_playlist_header(data, pid)
+
+  -- 关键优化（方案1）：若歌单无独立大图，自动继承首曲高清封面，详情页唱片质感立现
+  if pl and (not pl.coverUrl or pl.coverUrl == "") then
+    local songs = browse_parser.parse_playlist_songs(data)
+    if songs and #songs > 0 and songs[1].coverUrl and string.len(songs[1].coverUrl) > 0 then
+      pl.coverUrl = songs[1].coverUrl
+    end
+  end
+
+  return pl
 end
 
 --- 歌单歌曲分页业务 (对齐 Lazer List<MusicSong> 契约)
