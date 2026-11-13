@@ -7,6 +7,26 @@ local browse_parser = require("ytm.parsers.browse")
 
 local catalog_service = {}
 
+-- 内存搜索缓存 (LRU / FIFO 限制 100 条)，消除榜单重复查询与二次匹配延迟
+local search_cache = {}
+local search_cache_keys = {}
+local MAX_SEARCH_CACHE = 100
+
+local function get_cached_search(key)
+  return search_cache[key]
+end
+
+local function set_cached_search(key, val)
+  if not search_cache[key] then
+    table.insert(search_cache_keys, key)
+    if #search_cache_keys > MAX_SEARCH_CACHE then
+      local oldest = table.remove(search_cache_keys, 1)
+      search_cache[oldest] = nil
+    end
+  end
+  search_cache[key] = val
+end
+
 --- 综合搜索业务
 function catalog_service.search(args)
   local query = ""
@@ -25,6 +45,12 @@ function catalog_service.search(args)
     return { songs = {}, albums = {}, artists = {}, playlists = {} }
   end
 
+  local cache_key = query .. "::" .. tostring(requested_limit)
+  local cached = get_cached_search(cache_key)
+  if cached then
+    return cached
+  end
+
   transport.ensure_visitor_data()
 
   local payload = {
@@ -34,9 +60,10 @@ function catalog_service.search(args)
   local data = transport.post_music("search", payload, constants.CLIENT_WEB_REMIX)
   local results = search_parser.parse_search_results(data, query)
 
-  -- 若单曲不足且未满足请求量，发起歌曲过滤搜索作为补充
-  -- 若已有足够单曲（例如榜单匹配只需 8 条），直接返回，避免冗余发起二次请求
-  if #results.songs < requested_limit and #results.songs < 10 then
+  -- 若单曲不足且未满足请求量，发起歌曲过滤搜索作为补充。
+  -- 关键优化：当 requested_limit <= 8 时 (如 Lazer 榜单自动匹配批量并发场景)，
+  -- 只要返回了歌曲或者榜单匹配，严禁发起二次 HTTP 请求，防止串行队列耗时累加突破 Dart 5.0 秒超时！
+  if requested_limit > 8 and #results.songs < requested_limit and #results.songs < 10 then
     local payload_songs = {
       query = query,
       params = "EgWKAQIIAWoOEAUQCRADEAQQChAVEBA%3D"
@@ -58,6 +85,7 @@ function catalog_service.search(args)
     end
   end
 
+  set_cached_search(cache_key, results)
   return results
 end
 

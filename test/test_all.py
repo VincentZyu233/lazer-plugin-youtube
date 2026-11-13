@@ -14,6 +14,7 @@ from test_stream_nodes import test_stream_nodes
 from test_home_feed import test_home_feed
 from test_playlist import test_playlist
 from test_charts import test_charts
+from test_chart_match import test_chart_match
 
 def get_plugin_version() -> str:
     manifest_path = os.path.join(os.path.dirname(__file__), "..", "manifest.json")
@@ -44,6 +45,7 @@ def main():
         ("Home Feed Discovery & Daily Tracks", test_home_feed),
         ("Playlist Detail & Tracks (VLOLAK...)", lambda: test_playlist()),
         ("Charts Toplist Discovery", test_charts),
+        ("Chart Match & Title Cleaning Simulation (Biliboard)", test_chart_match),
     ]
 
     for name, fn in tests:

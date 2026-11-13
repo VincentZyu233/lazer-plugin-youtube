@@ -2,6 +2,47 @@ local nav = require("ytm.core.navigation")
 
 local search_parser = {}
 
+--- 清洗歌曲标题，去除噪音修饰，提升 Lazer 榜单与搜索匹配成功率
+local function clean_song_title(title, query)
+  if not title or title == "" then return title end
+  local clean = title
+
+  -- 1. 去除 【...】 和 [...] (如 【MV】、[Official Music Video]、[初音ミク]、[meme] 等)
+  clean = string.gsub(clean, "^【[^】]*】%s*", "")
+  clean = string.gsub(clean, "%s*【[^】]*】$", "")
+  clean = string.gsub(clean, "^%[[^%]]*%]%s*", "")
+  clean = string.gsub(clean, "%s*%[[^%]]*%]$", "")
+
+  -- 2. 去除 合作音乐人 / feat / ft 修饰
+  clean = string.gsub(clean, "%s*（合作音乐人：[^）]*）", "")
+  clean = string.gsub(clean, "%s*%(合作音乐人：[^%)]*%)", "")
+  clean = string.gsub(clean, "%s*%(feat%.?[^%)]*%)", "")
+  clean = string.gsub(clean, "%s*%(ft%.?[^%)]*%)", "")
+  clean = string.gsub(clean, "%s*（feat%.?[^）]*）", "")
+  clean = string.gsub(clean, "%s*（ft%.?[^）]*）", "")
+  clean = nav.trim_str(clean)
+
+  -- 3. 分割处理复合标题 "A - B" 或 "A / B" (常见于 "日文名 - 英文译名" 或 "中文名 - 英文名")
+  local part1, sep, part2 = string.match(clean, "^(.-)%s+([%-/])%s+(.+)$")
+  if part1 and part2 then
+    part1 = nav.trim_str(part1)
+    part2 = nav.trim_str(part2)
+    local q_lower = string.lower(query or "")
+    local p1_lower = string.lower(part1)
+    local p2_lower = string.lower(part2)
+
+    if string.len(q_lower) > 0 then
+      if p1_lower == q_lower or string.find(q_lower, p1_lower, 1, true) or string.find(p1_lower, q_lower, 1, true) then
+        clean = part1
+      elseif p2_lower == q_lower or string.find(q_lower, p2_lower, 1, true) or string.find(p2_lower, q_lower, 1, true) then
+        clean = part2
+      end
+    end
+  end
+
+  return clean
+end
+
 --- 解析单个 musicResponsiveListItemRenderer 为歌曲对象
 function search_parser.parse_song_item(it, query, seen_songs)
   if not it or type(it) ~= "table" then return nil end
@@ -24,13 +65,15 @@ function search_parser.parse_song_item(it, query, seen_songs)
   end
 
   local cols = it.flexColumns or {}
-  local title = ""
+  local raw_title = ""
   if cols[1] and cols[1].musicResponsiveListItemFlexColumnRenderer then
-    title = nav.extract_text(cols[1].musicResponsiveListItemFlexColumnRenderer.text)
+    raw_title = nav.extract_text(cols[1].musicResponsiveListItemFlexColumnRenderer.text)
   end
-  if string.len(title) == 0 then
-    title = "Song " .. vid
+  if string.len(raw_title) == 0 then
+    raw_title = "Song " .. vid
   end
+
+  local title = clean_song_title(raw_title, query)
 
   local cover_url = ""
   local thumbs = nav.nav(it, { "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails" })
