@@ -1,4 +1,6 @@
+import os
 import sys
+import json
 from test_search import test_search
 from test_stream import test_stream
 from test_song import test_song
@@ -10,9 +12,18 @@ from test_lyrics import (
 )
 from test_stream_nodes import test_stream_nodes
 
+def get_plugin_version() -> str:
+    manifest_path = os.path.join(os.path.dirname(__file__), "..", "manifest.json")
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            return json.load(f).get("version", "unknown")
+    except Exception:
+        return "unknown"
+
 def main():
+    version = get_plugin_version()
     print("==================================================")
-    print(" Running Lazer YouTube Plugin Test Suite (v0.1.5)")
+    print(f" Running Lazer YouTube Plugin Test Suite (v{version})")
     print("==================================================")
 
     passed = 0
