@@ -227,22 +227,7 @@ function catalog_service.artist(artist_id)
   local ok, data = pcall(transport.post_music, "browse", { browseId = b_id }, constants.CLIENT_WEB_REMIX)
   if not ok or not data then return nil end
 
-  local hdr = nav.nav(data, { "header", "musicImmersiveHeaderRenderer" })
-           or nav.nav(data, { "header", "musicVisualHeaderRenderer" })
-           or {}
-  local name = nav.nav(hdr, { "title", "runs", 1, "text" }) or "Artist"
-  local desc = nav.nav(hdr, { "description", "runs", 1, "text" }) or ""
-  local cover_url = ""
-  local thumbs = nav.nav(hdr, { "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails" })
-  if thumbs then cover_url = nav.extract_thumbnail(thumbs) end
-
-  return {
-    id = aid,
-    name = name,
-    coverUrl = cover_url,
-    description = desc,
-    albumCount = 0
-  }
+  return browse_parser.parse_artist(data, aid)
 end
 
 --- 歌手热门歌曲列表业务

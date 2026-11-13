@@ -409,4 +409,95 @@ function browse_parser.parse_artist_songs(data)
   return songs
 end
 
+--- 智能缝合与清洗歌手介绍 Runs，修复 YouTube 官方维基百科切分破损并完整保留真实 URL
+function browse_parser.extract_artist_description(desc_obj)
+  if not desc_obj or type(desc_obj) ~= "table" then return "" end
+  local runs = desc_obj.runs
+  if not runs or #runs == 0 then
+    return desc_obj.text or ""
+  end
+
+  if #runs < 3 then
+    local parts = {}
+    for _, r in ipairs(runs) do
+      table.insert(parts, r.text or "")
+    end
+    return table.concat(parts, "")
+  end
+
+  local main_text = runs[1].text or ""
+  local run1_ep = runs[2].navigationEndpoint or {}
+  local run1_url = nav.nav(run1_ep, { "urlEndpoint", "url" }) or ""
+
+  if string.find(main_text, "来自“Wikipedia”") and string.len(run1_url) > 0 then
+    -- 1. 提纯维基百科纯净 URL (截去误吞的 "），遵循" 等后缀)
+    local clean_wiki_url = string.match(run1_url, "^(https?://[^%)]+)") or run1_url
+    clean_wiki_url = string.gsub(clean_wiki_url, "[，,%)]+$", "")
+
+    -- 2. 提纯 CC 协议 URL (来自 run 4)
+    local cc_url = "http://creativecommons.org/licenses/by-sa/3.0/legalcode"
+    if #runs >= 4 then
+      local raw_cc = nav.nav(runs[4], { "navigationEndpoint", "urlEndpoint", "url" })
+      if raw_cc and string.len(raw_cc) > 0 then
+        cc_url = raw_cc
+      end
+    end
+
+    -- 3. 提取主体简介文本 (去除结尾残缺的 '来自“Wikipedia”(' )
+    local clean_body = string.gsub(main_text, "[\r\n%s]*来自“Wikipedia”%($", "")
+    clean_body = string.gsub(clean_body, "[\r\n%s]*来自“Wikipedia”$", "")
+
+    -- 4. 规范重组输出
+    local attribution = string.format(
+      "\n\n来自“Wikipedia”（%s），遵循“Creative Commons Attribution CC-BY-SA 3.0”协议（%s）",
+      clean_wiki_url,
+      cc_url
+    )
+    return clean_body .. attribution
+  end
+
+  local parts = {}
+  for _, r in ipairs(runs) do
+    table.insert(parts, r.text or "")
+  end
+  return table.concat(parts, "")
+end
+
+--- 解析歌手详情 (包含头部、简介与统计)
+function browse_parser.parse_artist(data, artist_id)
+  if not data or type(data) ~= "table" then return nil end
+
+  local hdr = nav.nav(data, { "header", "musicImmersiveHeaderRenderer" })
+           or nav.nav(data, { "header", "musicVisualHeaderRenderer" })
+           or {}
+  local name = nav.nav(hdr, { "title", "runs", 1, "text" }) or "Artist"
+  local desc = browse_parser.extract_artist_description(hdr.description)
+
+  -- 若头部未附带完整简介，从底部的 musicDescriptionShelfRenderer 深度提取
+  if string.len(desc) == 0 then
+    local sec_list = nav.nav(data, {
+      "contents", "singleColumnBrowseResultsRenderer", "tabs", 1, "tabRenderer",
+      "content", "sectionListRenderer", "contents"
+    }) or {}
+    for _, s in ipairs(sec_list) do
+      if s.musicDescriptionShelfRenderer and s.musicDescriptionShelfRenderer.description then
+        desc = browse_parser.extract_artist_description(s.musicDescriptionShelfRenderer.description)
+        if string.len(desc) > 0 then break end
+      end
+    end
+  end
+
+  local cover_url = ""
+  local thumbs = nav.nav(hdr, { "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails" })
+  if thumbs then cover_url = nav.extract_thumbnail(thumbs) end
+
+  return {
+    id = tostring(artist_id or ""),
+    name = name,
+    coverUrl = cover_url,
+    description = desc,
+    albumCount = 0
+  }
+end
+
 return browse_parser

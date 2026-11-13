@@ -15,6 +15,7 @@ from test_home_feed import test_home_feed
 from test_playlist import test_playlist
 from test_charts import test_charts
 from test_chart_match import test_chart_match
+from test_artist_and_mixart import test_artist_description_and_songs, test_home_feed_mixart_persistence
 
 def get_plugin_version() -> str:
     manifest_path = os.path.join(os.path.dirname(__file__), "..", "manifest.json")
@@ -46,6 +47,8 @@ def main():
         ("Playlist Detail & Tracks (VLOLAK...)", lambda: test_playlist()),
         ("Charts Toplist Discovery", test_charts),
         ("Chart Match & Title Cleaning Simulation (Biliboard)", test_chart_match),
+        ("Artist Description & Top Songs (Jay Chou)", test_artist_description_and_songs),
+        ("Home Feed Mixart Fallback & Persistence", test_home_feed_mixart_persistence),
     ]
 
     for name, fn in tests:
