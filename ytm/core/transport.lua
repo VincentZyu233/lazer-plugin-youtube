@@ -50,6 +50,7 @@ function transport.request(url_or_endpoint, payload, client_profile, target_host
   }
 
   local is_mobile = (profile and profile.clientName == "ANDROID_MUSIC")
+  local is_visionos = (profile and profile.clientName == "VISIONOS")
   local ua = (profile and profile.userAgent) or constants.CLIENT_WEB_REMIX.userAgent
   local origin = (profile and profile.clientName == "VISIONOS") and constants.HOST_YOUTUBE or constants.HOST_MUSIC
 
@@ -73,13 +74,16 @@ function transport.request(url_or_endpoint, payload, client_profile, target_host
     headers["X-Goog-Visitor-Id"] = visitor_data
   end
 
-  local cookie = store.get_cookie()
-  if cookie and string.len(cookie) > 0 then
-    headers["Cookie"] = cookie
-    if not is_mobile then
-      local auth_header = auth_cookie.generate_authorization(cookie, origin)
-      if auth_header then
-        headers["Authorization"] = auth_header
+  -- 对标 yt-dlp: VISIONOS 客户端为 SUPPORTS_COOKIES = False，切勿注入 Web Cookie 与 SAPISIDHASH，否则 YouTube 会拒绝并报 HTTP 400
+  if not is_visionos then
+    local cookie = store.get_cookie()
+    if cookie and string.len(cookie) > 0 then
+      headers["Cookie"] = cookie
+      if not is_mobile then
+        local auth_header = auth_cookie.generate_authorization(cookie, origin)
+        if auth_header then
+          headers["Authorization"] = auth_header
+        end
       end
     end
   end
