@@ -1,7 +1,7 @@
 -- Lazer YouTube & YouTube Music Plugin
 -- 架构设计参考 ytmusicapi：Parsers (纯数据清洗) / Services (网络与业务编排) / Core (通信底座)
 
-local account = require("ytm.account")
+local account = require("ytm.services.account")
 local catalog = require("ytm.services.catalog")
 local lyrics = require("ytm.services.lyrics")
 local stream = require("ytm.services.stream")

@@ -8,7 +8,7 @@ local account = {}
 
 local pending_sessions = {}
 
---- 从 account_menu 的响应中提取当前登录账号的用户昵称与头像
+--- 从 account_menu 的响应中提取当前登录账号的用户昵称与头像 (Cookie 模式)
 local function extract_account_info(data)
   if not data or type(data) ~= "table" then return nil end
   local actions = data.actions
@@ -42,15 +42,15 @@ local function extract_account_info(data)
   return nil
 end
 
---- 使用 Access Token 获取当前账号个人信息
+--- 使用 Access Token 获取当前账号个人信息 (OAuth 模式: TVHTML5 guide 端点)
 function account.fetch_current_user_info(access_token)
   if not access_token or string.len(access_token) == 0 then return nil end
 
   local payload = {
     context = {
       client = {
-        clientName = "WEB_REMIX",
-        clientVersion = "1.20261110.04.00",
+        clientName = constants.CLIENT_TVHTML5.clientName,
+        clientVersion = constants.CLIENT_TVHTML5.clientVersion,
         hl = "zh-CN",
         gl = "JP"
       }
@@ -59,17 +59,13 @@ function account.fetch_current_user_info(access_token)
 
   local req_headers = {
     ["Content-Type"] = "application/json",
-    ["User-Agent"] = constants.CLIENT_WEB_REMIX.userAgent,
-    ["Origin"] = constants.HOST_MUSIC,
-    ["X-Origin"] = constants.HOST_MUSIC,
-    ["X-Goog-Api-Format-Version"] = "2",
-    ["Authorization"] = "Bearer " .. access_token,
-    ["X-Goog-Request-Time"] = tostring(store.now_sec())
+    ["User-Agent"] = constants.CLIENT_TVHTML5.userAgent,
+    ["Authorization"] = "Bearer " .. access_token
   }
 
   local ok, res = pcall(function()
     return host.http({
-      url = constants.HOST_MUSIC .. "/youtubei/v1/account/account_menu",
+      url = "https://www.youtube.com/youtubei/v1/guide?alt=json",
       method = "POST",
       headers = req_headers,
       body = host.json_encode(payload)
@@ -78,8 +74,32 @@ function account.fetch_current_user_info(access_token)
 
   if ok and res and res.status == 200 and res.body then
     local parse_ok, data = pcall(host.json_decode, res.body)
-    if parse_ok and data then
-      return extract_account_info(data)
+    if parse_ok and type(data) == "table" then
+      local items = nav.nav(data, { "topbar", "guideSectionRenderer", "items" })
+      if items and type(items) == "table" then
+        for _, it in ipairs(items) do
+          local entry = it.guideAccountEntryRenderer
+          if entry then
+            local name = nav.nav(entry, { "title", "simpleText" }) or nav.nav(entry, { "title", "runs", 1, "text" })
+            local avatar_url = nil
+            local thumbs = nav.nav(entry, { "thumbnail", "thumbnails" })
+            if thumbs and #thumbs > 0 and thumbs[#thumbs].url then
+              avatar_url = thumbs[#thumbs].url
+              if string.sub(avatar_url, 1, 2) == "//" then
+                avatar_url = "https:" .. avatar_url
+              end
+            end
+
+            if name or avatar_url then
+              return {
+                name = name or "YouTube 用户",
+                avatarUrl = avatar_url or "https://www.youtube.com/s/desktop/9906d203/img/favicon_144x144.png",
+                handle = name
+              }
+            end
+          end
+        end
+      end
     end
   end
 
@@ -92,14 +112,28 @@ function account.session()
     return nil
   end
 
-  local saved_name = store.get("user_name") or "YouTube User"
-  local saved_avatar = store.get("user_avatar") or "https://www.youtube.com/s/desktop/9906d203/img/favicon_144x144.png"
-  local saved_id = store.get("user_id") or "yt_authenticated"
+  local saved_name = store.get("user_name")
+  local saved_avatar = store.get("user_avatar")
+  local saved_id = store.get("user_id")
+
+  -- 自动恢复/纠正逻辑：如果当前只有 "YouTube 用户" 占位名，自动静默通过 guide 接口更新为真正账号名与头像
+  local access_token = store.get_access_token()
+  if access_token and string.len(access_token) > 0 and (not saved_name or saved_name == "YouTube 用户" or saved_name == "") then
+    local info = account.fetch_current_user_info(access_token)
+    if info and info.name and info.name ~= "YouTube 用户" then
+      saved_name = info.name
+      saved_avatar = info.avatarUrl or saved_avatar
+      saved_id = info.handle or saved_id
+      store.set("user_name", saved_name)
+      store.set("user_avatar", saved_avatar)
+      store.set("user_id", saved_id)
+    end
+  end
 
   return {
-    id = saved_id,
-    name = saved_name,
-    avatarUrl = saved_avatar
+    id = saved_id or "yt_authenticated",
+    name = (saved_name and string.len(saved_name) > 0) and saved_name or "YouTube 用户",
+    avatarUrl = (saved_avatar and string.len(saved_avatar) > 0) and saved_avatar or "https://www.youtube.com/s/desktop/9906d203/img/favicon_144x144.png"
   }
 end
 
@@ -120,7 +154,6 @@ function account.qrKey()
 end
 
 --- 获取扫码展示用的 URL (Lazer 契约: qrUrl)
--- 官方 activation 链接自动带上 user_code 参数，手机扫描后自动填入验证码，用户只需直接点击下一步选择账号授权
 function account.qrUrl(args)
   local key = tostring(args and args.key or "")
   if key == "" then
@@ -159,7 +192,7 @@ function account.qrCheck(args)
     end
     store.set_expires_at(expires_at)
 
-    -- 异步/就地获取用户个人基本信息
+    -- 使用 TVHTML5 guide 接口获取用户真实的 Google / YouTube 个人信息
     local user_info = account.fetch_current_user_info(access_token)
     local user_name = (user_info and user_info.name) or "YouTube 用户"
     local user_avatar = (user_info and user_info.avatarUrl) or "https://www.youtube.com/s/desktop/9906d203/img/favicon_144x144.png"

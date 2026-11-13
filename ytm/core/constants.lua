@@ -36,6 +36,15 @@ constants.CLIENT_VISIONOS = {
   utcOffsetMinutes = 0
 }
 
+-- InnerTube TV 客户端 (专用于与 OAuth Device Flow 凭据对齐)
+constants.CLIENT_TVHTML5 = {
+  clientName = "TVHTML5",
+  clientVersion = "7.20241127.01.00",
+  hl = "zh-CN",
+  gl = "JP",
+  userAgent = "Mozilla/5.0 Cobalt/Version"
+}
+
 -- InnerTube 常用 JSON Navigation 路径常量 (借鉴 ytmusicapi)
 constants.PATHS = {
   TIMESTAMPED_LYRICS = {
