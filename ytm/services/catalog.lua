@@ -137,12 +137,14 @@ function catalog_service.playlist(playlist_id)
                   or string.find(pid, "favorites", 1, true) or string.find(pid, "喜欢", 1, true))
   if is_fav then
     local favs = catalog_service.favorites({ limit = 100, offset = 0 })
+    local total = (favs and #favs > 0 and #favs) or cached_favs_total_count or 100
+    local cover = (favs and favs[1] and favs[1].coverUrl) or cached_favs_cover or "https://www.gstatic.com/youtube/media/ytm/images/pbg/liked-songs-delhi-576.png"
     return {
       id = pid,
       name = (store.get("user_name") or "YouTube") .. "喜欢的音乐",
       description = "在 YouTube Music 标记为喜欢的曲目",
-      coverUrl = (favs and favs[1] and favs[1].coverUrl) or "",
-      songCount = (favs and #favs) or 0,
+      coverUrl = cover,
+      songCount = total,
       isFavorites = true,
       owner = store.get("user_name") or "YouTube Music"
     }
@@ -178,14 +180,22 @@ end
 
 --- 歌单歌曲分页业务 (对齐 Lazer List<MusicSong> 契约)
 function catalog_service.playlist_songs(playlist_id, limit, offset)
-  local pid = tostring(playlist_id or "")
+  local pid = playlist_id
+  local take = limit
+  local skip = offset
+  if type(playlist_id) == "table" then
+    pid = playlist_id.id or playlist_id.playlistId or ""
+    take = playlist_id.limit or limit
+    skip = playlist_id.offset or offset
+  end
+  pid = tostring(pid or "")
   if string.len(pid) == 0 then return {} end
 
   -- 特殊处理：Lazer 内建喜欢歌单标识，重定向至 favorites 业务
   local is_fav = (pid == "__lazer_favorites__" or pid == "favorites" or pid == "VLLM" or pid == "LM"
                   or string.find(pid, "favorites", 1, true) or string.find(pid, "喜欢", 1, true))
   if is_fav then
-    return catalog_service.favorites({ limit = limit, offset = offset })
+    return catalog_service.favorites({ limit = take, offset = skip })
   end
 
   local b_id = normalize_browse_id(pid)
@@ -351,10 +361,11 @@ function catalog_service.favorites(args)
   end
 
   local now = get_now_ms()
-  -- 内存缓存防抖：若当前缓存尚在有效期内（<= 60 秒 = 60000 毫秒）且已有数据，首屏并发直接秒级返回，彻底杜绝重复请求超时
-  local is_cache_fresh = cached_favs and #cached_favs > 0 and (now - cached_favs_time <= 60000)
+  -- 极速并发防抖：仅拦截 3 秒内的重复突发并发（如 UI 启动时多个组件同时发起请求）
+  -- 超过 3 秒的用户手动刷新或切页直接向 YouTube 重新拉取最新数据
+  local is_burst = cached_favs and #cached_favs > 0 and (now - cached_favs_time <= 3000)
 
-  if not is_cache_fresh and (not cached_favs or #cached_favs == 0 or (now - cached_favs_time > 120000)) then
+  if (not is_burst and offset == 0) or not cached_favs or #cached_favs == 0 then
     local payload = {
       browseId = "VLLM"
     }
@@ -366,27 +377,48 @@ function catalog_service.favorites(args)
     if ok and data then
       local songs, next_token, total_count = browse_parser.parse_favorites(data)
       if songs and #songs > 0 then
-        cached_favs = songs
-        cached_favs_token = next_token
         cached_favs_time = now
         if total_count and total_count > 0 then
           cached_favs_total_count = total_count
-        else
-          cached_favs_total_count = math.max(#songs, cached_favs_total_count or 0)
         end
-        if songs[1] and songs[1].coverUrl then
+        if songs[1] and songs[1].coverUrl and string.len(songs[1].coverUrl) > 0 then
           cached_favs_cover = songs[1].coverUrl
         end
+
+        -- 连续遍历拉取后续 continuation 分页，拉齐所有有效曲目
+        local cur_token = next_token
+        local pages_walked = 0
+        local seen = {}
+        for _, s in ipairs(songs) do seen[s.id] = true end
+        while cur_token and string.len(cur_token) > 0 and pages_walked < 10 do
+          pages_walked = pages_walked + 1
+          local c_payload = { continuation = cur_token }
+          local c_ok, c_data = pcall(transport.post_music, "browse", c_payload, constants.CLIENT_WEB_REMIX)
+          if c_ok and c_data then
+            local more_songs, new_token = browse_parser.parse_continuation_songs(c_data, seen)
+            if more_songs and #more_songs > 0 then
+              for _, s in ipairs(more_songs) do
+                table.insert(songs, s)
+              end
+            end
+            cur_token = new_token
+          else
+            break
+          end
+        end
+        cached_favs = songs
+        cached_favs_token = cur_token
+        cached_favs_total_count = math.max(#songs, cached_favs_total_count or 0)
       end
     end
   end
 
   cached_favs = cached_favs or {}
 
-  -- 若请求的 offset 达到了当前缓存末尾，且存在后续 continuation 令牌，执行单次增量续拉
+  -- 若请求的 offset 达到了当前缓存末尾，且存在后续 continuation 令牌，执行增量续拉
   if offset >= #cached_favs and cached_favs_token then
-    local query_url = "browse?continuation=" .. safe_url_encode(cached_favs_token)
-    local c_ok, c_data = pcall(transport.post_music, query_url, {}, constants.CLIENT_WEB_REMIX)
+    local c_payload = { continuation = cached_favs_token }
+    local c_ok, c_data = pcall(transport.post_music, "browse", c_payload, constants.CLIENT_WEB_REMIX)
     if c_ok and c_data then
       local seen = {}
       for _, s in ipairs(cached_favs) do seen[s.id] = true end
@@ -397,6 +429,7 @@ function catalog_service.favorites(args)
         end
       end
       cached_favs_token = new_token
+      cached_favs_total_count = math.max(#cached_favs, cached_favs_total_count or 0)
     else
       cached_favs_token = nil
     end
@@ -478,7 +511,7 @@ function catalog_service.set_favorite(args)
   return ok and res ~= nil
 end
 
---- 用户歌单列表 (提供个人“我喜欢的音乐”入口，准确呈现真实总曲目数)
+--- 用户歌单列表 (提供个人“我喜欢的音乐”入口，准确呈现真实总曲目数与最新首曲封面)
 function catalog_service.playlists(args)
   local cookie = store.get_cookie()
   if not cookie or string.len(cookie) == 0 then return {} end
@@ -490,13 +523,14 @@ function catalog_service.playlists(args)
 
   local user = account.get_user()
   local user_name = user and user.name or ""
-  local total = cached_favs_total_count or (cached_favs and #cached_favs) or 100
+  local total = (cached_favs and #cached_favs > 0 and #cached_favs) or cached_favs_total_count or 100
+  local cover = (cached_favs and cached_favs[1] and cached_favs[1].coverUrl) or cached_favs_cover or "https://www.gstatic.com/youtube/media/ytm/images/pbg/liked-songs-delhi-576.png"
 
   local fav_pl = {
     id = "VLLM",
     name = (string.len(user_name) > 0 and user_name or "YouTube") .. "喜欢的音乐",
     description = "Liked Songs on YouTube Music",
-    coverUrl = cached_favs_cover or "https://www.gstatic.com/youtube/media/ytm/images/pbg/liked-songs-delhi-576.png",
+    coverUrl = cover,
     songCount = total,
     writable = true,
     isFavorites = true,

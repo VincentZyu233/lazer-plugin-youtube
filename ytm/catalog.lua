@@ -23,6 +23,10 @@ function catalog.playlist(id)
   return catalog_service.playlist(id)
 end
 
+function catalog.playlists(args)
+  return catalog_service.playlists(args)
+end
+
 function catalog.playlist_songs(id, limit, offset)
   return catalog_service.playlist_songs(id, limit, offset)
 end
