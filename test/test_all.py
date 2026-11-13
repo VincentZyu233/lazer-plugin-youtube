@@ -11,6 +11,9 @@ from test_lyrics import (
     test_lyrics_unselectable
 )
 from test_stream_nodes import test_stream_nodes
+from test_home_feed import test_home_feed
+from test_playlist import test_playlist
+from test_charts import test_charts
 
 def get_plugin_version() -> str:
     manifest_path = os.path.join(os.path.dirname(__file__), "..", "manifest.json")
@@ -38,6 +41,9 @@ def main():
         ("MV Auto-Resolution to Official Timed Lyrics (aBZqxfnvaVA)", lambda: test_lyrics_mv_auto_resolution("aBZqxfnvaVA")),
         ("Fallback Lyrics Synthesis (1LBbOldnZcA)", lambda: test_lyrics_fallback("1LBbOldnZcA")),
         ("Lyrics Unselectable Check (hwpeUW1yEOI)", lambda: test_lyrics_unselectable("hwpeUW1yEOI")),
+        ("Home Feed Discovery & Daily Tracks", test_home_feed),
+        ("Playlist Detail & Tracks (VLOLAK...)", lambda: test_playlist()),
+        ("Charts Toplist Discovery", test_charts),
     ]
 
     for name, fn in tests:

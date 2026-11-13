@@ -12,6 +12,7 @@ local plugin = {}
 local CAPABILITIES = {
   "search",
   "lyrics",
+  "playlists",
   "homeFeed",
   "charts",
   "radio",
@@ -57,13 +58,24 @@ function plugin.call(operation, args)
   elseif operation == "song" then
     local song_id = args.id or args.songId or ""
     return catalog.song(song_id)
+  elseif operation == "playlist" then
+    local playlist_id = args.id or args.playlistId or ""
+    return catalog.playlist(playlist_id)
+  elseif operation == "playlistSongs" then
+    local playlist_id = args.id or args.playlistId or ""
+    local limit = tonumber(args.limit) or 50
+    local offset = tonumber(args.offset) or 0
+    return catalog.playlist_songs(playlist_id, limit, offset)
   elseif operation == "lyrics" then
     local song_id = args.id or args.songId or ""
     return lyrics.get_lyrics(song_id)
   elseif operation == "favorites" then
     return catalog.favorites(args)
-  elseif operation == "homeFeed" or operation == "recommendations" then
+  elseif operation == "homeFeed" then
     return discover.home_feed()
+  elseif operation == "recommendations" then
+    local limit = tonumber(args.limit) or 30
+    return discover.recommendations(limit)
   elseif operation == "charts" then
     return discover.charts()
   elseif operation == "radio" then

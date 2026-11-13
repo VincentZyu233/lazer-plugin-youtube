@@ -10,6 +10,7 @@
   "capabilities": [
     "search",
     "lyrics",
+    "playlists",
     "homeFeed",
     "charts",
     "radio",

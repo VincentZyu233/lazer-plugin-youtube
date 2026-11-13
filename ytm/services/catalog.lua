@@ -10,10 +10,14 @@ local catalog_service = {}
 --- 综合搜索业务
 function catalog_service.search(args)
   local query = ""
+  local requested_limit = 20
   if type(args) == "string" then
     query = args
   elseif type(args) == "table" then
     query = args.query or args.keyword or ""
+    if args.limit then
+      requested_limit = tonumber(args.limit) or 20
+    end
   end
 
   query = nav.trim_str(query)
@@ -30,8 +34,9 @@ function catalog_service.search(args)
   local data = transport.post_music("search", payload, constants.CLIENT_WEB_REMIX)
   local results = search_parser.parse_search_results(data, query)
 
-  -- 若综合搜索中的单曲较少，发起歌曲过滤搜索作为强力补充，确保歌曲充足
-  if #results.songs < 20 then
+  -- 若单曲不足且未满足请求量，发起歌曲过滤搜索作为补充
+  -- 若已有足够单曲（例如榜单匹配只需 8 条），直接返回，避免冗余发起二次请求
+  if #results.songs < requested_limit and #results.songs < 10 then
     local payload_songs = {
       query = query,
       params = "EgWKAQIIAWoOEAUQCRADEAQQChAVEBA%3D"
@@ -76,6 +81,49 @@ function catalog_service.song(id)
 
   local res = transport.post_youtube("player?prettyPrint=false", payload, constants.CLIENT_VISIONOS)
   return browse_parser.parse_song_details(res, vid)
+end
+
+--- 歌单详情业务 (对齐 Lazer MusicPlaylist 契约)
+function catalog_service.playlist(playlist_id)
+  local pid = tostring(playlist_id or "")
+  if string.len(pid) == 0 then return nil end
+
+  local clean_id = string.match(pid, "([a-zA-Z0-9_-]+)$") or pid
+  local b_id = clean_id
+  if string.sub(b_id, 1, 2) ~= "VL" and string.sub(b_id, 1, 2) ~= "PL" and string.sub(b_id, 1, 4) ~= "RDCL" then
+    b_id = "VL" .. b_id
+  end
+
+  transport.ensure_visitor_data()
+  local data = transport.post_music("browse", { browseId = b_id }, constants.CLIENT_WEB_REMIX)
+  return browse_parser.parse_playlist_header(data, pid)
+end
+
+--- 歌单歌曲分页业务 (对齐 Lazer List<MusicSong> 契约)
+function catalog_service.playlist_songs(playlist_id, limit, offset)
+  local pid = tostring(playlist_id or "")
+  if string.len(pid) == 0 then return {} end
+
+  local clean_id = string.match(pid, "([a-zA-Z0-9_-]+)$") or pid
+  local b_id = clean_id
+  if string.sub(b_id, 1, 2) ~= "VL" and string.sub(b_id, 1, 2) ~= "PL" and string.sub(b_id, 1, 4) ~= "RDCL" then
+    b_id = "VL" .. b_id
+  end
+
+  transport.ensure_visitor_data()
+  local data = transport.post_music("browse", { browseId = b_id }, constants.CLIENT_WEB_REMIX)
+  if not data then return {} end
+
+  local songs = browse_parser.parse_playlist_songs(data)
+  local take = tonumber(limit) or 50
+  local skip = tonumber(offset) or 0
+
+  local paged = {}
+  for i = skip + 1, math.min(#songs, skip + take) do
+    table.insert(paged, songs[i])
+  end
+
+  return paged
 end
 
 --- 我喜欢的音乐 (VLLM)
