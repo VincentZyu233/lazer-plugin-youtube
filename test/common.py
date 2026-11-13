@@ -54,7 +54,7 @@ def post_innertube(url: str, payload: dict, client_profile: dict, extra_headers:
     global _cached_visitor_data
     opener = get_opener()
 
-    ctx_client = dict(client_profile)
+    ctx_client = {k: v for k, v in client_profile.items() if k != "userAgent"}
     if _cached_visitor_data:
         ctx_client["visitorData"] = _cached_visitor_data
 
@@ -62,12 +62,14 @@ def post_innertube(url: str, payload: dict, client_profile: dict, extra_headers:
         "client": ctx_client
     }
 
+    is_mobile = client_profile.get("clientName") == "ANDROID_MUSIC"
     headers = {
         "Content-Type": "application/json",
         "User-Agent": client_profile.get("userAgent", CLIENT_WEB_REMIX["userAgent"]),
         "X-Goog-Api-Format-Version": "2",
-        "Origin": HOST_MUSIC if "music.youtube" in url else HOST_YOUTUBE,
     }
+    if not is_mobile:
+        headers["Origin"] = HOST_MUSIC if "music.youtube" in url else HOST_YOUTUBE
     if _cached_visitor_data:
         headers["X-Goog-Visitor-Id"] = _cached_visitor_data
 

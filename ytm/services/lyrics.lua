@@ -58,8 +58,10 @@ function lyrics_service.get_lyrics(song_id)
     return {}
   end
 
+  local clean_id = string.match(song_id, "([a-zA-Z0-9_-]+)$") or song_id
+
   -- 第 1 步：尝试直接获取当前 videoId 的歌词
-  local self_browse_id = get_video_lyrics_browse_id(song_id)
+  local self_browse_id = get_video_lyrics_browse_id(clean_id)
   local self_lyrics, has_precise_cues = fetch_browse_lyrics(self_browse_id)
 
   if #self_lyrics > 0 and has_precise_cues then
@@ -68,7 +70,7 @@ function lyrics_service.get_lyrics(song_id)
 
   -- 第 2 步：若自身没有精准时间戳，自动尝试从官方录音室曲库 (ATV) 检索匹配
   local player_res = transport.post_youtube("player?prettyPrint=false", {
-    videoId = song_id
+    videoId = clean_id
   }, constants.CLIENT_VISIONOS)
 
   local vd = player_res and player_res.videoDetails
@@ -104,7 +106,7 @@ function lyrics_service.get_lyrics(song_id)
       for idx = 1, math.min(#candidate_items, 3) do
         local it = candidate_items[idx]
         local cand_vid = nav.nav(it, { "playlistItemData", "videoId" })
-        if cand_vid and cand_vid ~= song_id and string.len(cand_vid) == 11 then
+        if cand_vid and cand_vid ~= clean_id and string.len(cand_vid) == 11 then
           local cand_b_id = get_video_lyrics_browse_id(cand_vid)
           if cand_b_id then
             local cand_lyrics, cand_has_cues = fetch_browse_lyrics(cand_b_id)

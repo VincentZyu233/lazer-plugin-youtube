@@ -31,7 +31,9 @@ function transport.request(url_or_endpoint, payload, client_profile, target_host
 
   local ctx_client = {}
   for k, v in pairs(profile) do
-    ctx_client[k] = v
+    if k ~= "userAgent" then
+      ctx_client[k] = v
+    end
   end
   if visitor_data and string.len(visitor_data) > 0 then
     ctx_client.visitorData = visitor_data
@@ -47,16 +49,20 @@ function transport.request(url_or_endpoint, payload, client_profile, target_host
     client = ctx_client
   }
 
+  local is_mobile = (profile and profile.clientName == "ANDROID_MUSIC")
   local ua = (profile and profile.userAgent) or constants.CLIENT_WEB_REMIX.userAgent
-  local origin = (profile.clientName == "VISIONOS") and constants.HOST_YOUTUBE or constants.HOST_MUSIC
+  local origin = (profile and profile.clientName == "VISIONOS") and constants.HOST_YOUTUBE or constants.HOST_MUSIC
 
   local headers = {
     ["Content-Type"] = "application/json",
     ["User-Agent"] = ua,
-    ["X-Goog-Api-Format-Version"] = "2",
-    ["Origin"] = origin,
-    ["X-Origin"] = origin
+    ["X-Goog-Api-Format-Version"] = "2"
   }
+
+  if not is_mobile then
+    headers["Origin"] = origin
+    headers["X-Origin"] = origin
+  end
 
   if profile.clientName == "VISIONOS" then
     headers["X-YouTube-Client-Name"] = "101"
@@ -70,9 +76,11 @@ function transport.request(url_or_endpoint, payload, client_profile, target_host
   local cookie = store.get_cookie()
   if cookie and string.len(cookie) > 0 then
     headers["Cookie"] = cookie
-    local auth_header = auth_cookie.generate_authorization(cookie, origin)
-    if auth_header then
-      headers["Authorization"] = auth_header
+    if not is_mobile then
+      local auth_header = auth_cookie.generate_authorization(cookie, origin)
+      if auth_header then
+        headers["Authorization"] = auth_header
+      end
     end
   end
 
