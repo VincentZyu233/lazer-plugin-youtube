@@ -402,6 +402,35 @@ function browse_parser.parse_playlist_songs(data)
   return songs
 end
 
+--- 提取歌手主页中“热门歌曲全部曲目”的跳转 browseId (如 VLOLAK...)
+function browse_parser.extract_artist_more_songs_id(data)
+  if not data or type(data) ~= "table" then return nil end
+
+  local sec_list = nav.nav(data, {
+    "contents", "singleColumnBrowseResultsRenderer", "tabs", 1, "tabRenderer",
+    "content", "sectionListRenderer", "contents"
+  }) or {}
+
+  for _, sec in ipairs(sec_list) do
+    local ms = sec.musicShelfRenderer
+    if ms then
+      local b_id = nav.nav(ms, { "bottomEndpoint", "browseEndpoint", "browseId" })
+      if b_id and string.len(b_id) > 0 then
+        return b_id
+      end
+      local title_runs = nav.nav(ms, { "title", "runs" })
+      if title_runs and title_runs[1] then
+        local t_bid = nav.nav(title_runs[1], { "navigationEndpoint", "browseEndpoint", "browseId" })
+        if t_bid and string.len(t_bid) > 0 then
+          return t_bid
+        end
+      end
+    end
+  end
+
+  return nil
+end
+
 --- 解析歌手主页的热门歌曲列表 (Top songs)
 function browse_parser.parse_artist_songs(data, artist_id)
   local songs = {}

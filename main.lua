@@ -62,6 +62,8 @@ function plugin.call(operation, args)
   elseif operation == "playlist" then
     local playlist_id = args.id or args.playlistId or ""
     return catalog.playlist(playlist_id)
+  elseif operation == "playlists" then
+    return {}
   elseif operation == "playlistSongs" then
     local playlist_id = args.id or args.playlistId or ""
     local limit = tonumber(args.limit) or 50

@@ -132,6 +132,19 @@ function catalog_service.playlist(playlist_id)
   local pid = tostring(playlist_id or "")
   if string.len(pid) == 0 then return nil end
 
+  -- 特殊处理：Lazer 内建喜欢歌单标识，重定向至 favorites
+  if pid == "__lazer_favorites__" or pid == "favorites" or pid == "VLLM" or pid == "LM" then
+    local favs = catalog_service.favorites({ limit = 100, offset = 0 })
+    return {
+      id = pid,
+      name = (store.get("user_name") or "YouTube") .. "喜欢的音乐",
+      description = "在 YouTube Music 标记为喜欢的曲目",
+      coverUrl = (favs and favs[1] and favs[1].coverUrl) or "",
+      songCount = (favs and #favs) or 0,
+      owner = store.get("user_name") or "YouTube Music"
+    }
+  end
+
   local b_id = normalize_browse_id(pid)
 
   transport.ensure_visitor_data()
@@ -164,6 +177,11 @@ end
 function catalog_service.playlist_songs(playlist_id, limit, offset)
   local pid = tostring(playlist_id or "")
   if string.len(pid) == 0 then return {} end
+
+  -- 特殊处理：Lazer 内建喜欢歌单标识，重定向至 favorites 业务
+  if pid == "__lazer_favorites__" or pid == "favorites" or pid == "VLLM" or pid == "LM" then
+    return catalog_service.favorites({ limit = limit, offset = offset })
+  end
 
   local b_id = normalize_browse_id(pid)
 
@@ -263,7 +281,20 @@ function catalog_service.artist_songs(artist_id, limit, offset)
   local ok, data = pcall(transport.post_music, "browse", { browseId = b_id }, constants.CLIENT_WEB_REMIX)
   if not ok or not data then return {} end
 
-  local songs = browse_parser.parse_artist_songs(data, aid)
+  -- 深度提取：检查歌手主页是否有热门歌曲全部列表端点 (如 VLOLAK... 或 params)
+  local more_browse_id = browse_parser.extract_artist_more_songs_id(data)
+  local songs = {}
+  if more_browse_id and string.len(more_browse_id) > 0 then
+    local m_ok, m_data = pcall(transport.post_music, "browse", { browseId = more_browse_id }, constants.CLIENT_WEB_REMIX)
+    if m_ok and m_data then
+      songs = browse_parser.parse_playlist_songs(m_data)
+    end
+  end
+
+  -- 若未能通过专属播放列表解析到，回退解析主页预览曲目 (5 首或 Carousel)
+  if not songs or #songs == 0 then
+    songs = browse_parser.parse_artist_songs(data, aid)
+  end
   local take = tonumber(limit) or 50
   local skip = tonumber(offset) or 0
 
@@ -323,8 +354,8 @@ function catalog_service.favorites(args)
 
   -- 若请求的 offset 达到了当前缓存末尾，且存在后续 continuation 令牌，执行单次增量续拉
   if offset >= #cached_favs and cached_favs_token then
-    local cont_payload = { continuation = cached_favs_token }
-    local c_ok, c_data = pcall(transport.post_music, "browse", cont_payload, constants.CLIENT_WEB_REMIX)
+    local query_url = "browse?continuation=" .. host.url_encode(cached_favs_token)
+    local c_ok, c_data = pcall(transport.post_music, query_url, {}, constants.CLIENT_WEB_REMIX)
     if c_ok and c_data then
       local seen = {}
       for _, s in ipairs(cached_favs) do seen[s.id] = true end
