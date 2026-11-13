@@ -25,7 +25,7 @@ function browse_parser.parse_song_details(res, vid)
     artists = {
       { id = channel_id, name = author, coverUrl = "" }
     },
-    albumName = "YouTube Music",
+    albumName = "[未知播放] " .. (string.len(title) > 0 and title or "未知专辑"),
     coverUrl = cover_url,
     durationMs = dur_s * 1000
   }
@@ -186,7 +186,7 @@ function browse_parser.parse_home_sections(sec_list, feed, seen_pl, seen_alb, se
                 id = vid,
                 title = title,
                 artists = { { id = "yt_artist_" .. vid, name = (sub ~= "" and sub or "YouTube Music"), coverUrl = "" } },
-                albumName = "YouTube Music",
+                albumName = "[未知播放] " .. (string.len(title) > 0 and title or "未知专辑"),
                 coverUrl = thumb,
                 durationMs = 0
               }
@@ -480,7 +480,7 @@ function browse_parser.parse_artist_songs(data, artist_id)
                 id = vid,
                 title = t_title,
                 artists = { { id = tostring(artist_id or ""), name = "Artist", coverUrl = "" } },
-                albumName = "YouTube Music",
+                albumName = "[未知播放] " .. (string.len(title) > 0 and title or "未知专辑"),
                 coverUrl = cover,
                 durationMs = 0
               })

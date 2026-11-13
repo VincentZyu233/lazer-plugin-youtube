@@ -165,4 +165,103 @@ function nav.split_lines(str)
   return lines
 end
 
+--- 判断是否为播放量/统计数文本 (如 "播放次数：1743万", "17M views", "850K", "每月听众：70.4万")
+function nav.is_play_count(str)
+  if not str or type(str) ~= "string" or string.len(str) == 0 then return false end
+  local s = nav.trim_str(str)
+  if string.find(s, "播放", 1, true)
+     or string.find(s, "視聴", 1, true)
+     or string.find(s, "views", 1, true)
+     or string.find(s, "view", 1, true)
+     or string.find(s, "听众", 1, true)
+     or string.find(s, "订阅", 1, true)
+     or string.find(s, "subscriber", 1, true) then
+    return true
+  end
+  if string.match(s, "^%d+[%d%.]*%s*[KMBkmb万亿]$") then
+    return true
+  end
+  return false
+end
+
+--- 格式化播放量为 YouTube 常见的 K / M / B 字符串 (如 "17M", "3.4M", "850K")
+-- 若无法解析出有效数字，返回 nil
+function nav.format_play_count(str)
+  if not str or type(str) ~= "string" or string.len(str) == 0 then return nil end
+  local s = nav.trim_str(str)
+
+  -- 1. 原生英文单位: 如 "17M views", "850K", "1.2B"
+  local num_str, unit = string.match(s, "([%d%.]+)%s*([KMBkmb])")
+  if num_str and unit then
+    local n = tonumber(num_str)
+    local u = string.upper(unit)
+    if n then
+      if math.floor(n) == n then
+        return string.format("%d%s", math.floor(n), u)
+      else
+        return string.format("%.1f%s", n, u)
+      end
+    end
+  end
+
+  -- 2. 中文/日文万: 如 "播放次数：1743万", "335万"
+  local wan_str = string.match(s, "([%d%.]+)%s*万")
+  if wan_str then
+    local wan_num = tonumber(wan_str)
+    if wan_num then
+      local total = wan_num * 10000
+      if total >= 1000000000 then
+        local b = total / 1000000000
+        return string.format("%.1fB", b)
+      elseif total >= 10000000 then
+        local m = math.floor(total / 1000000 + 0.5)
+        return string.format("%dM", m)
+      elseif total >= 1000000 then
+        local m = total / 1000000
+        return string.format("%.1fM", m)
+      elseif total >= 1000 then
+        local k = math.floor(total / 1000 + 0.5)
+        return string.format("%dK", k)
+      else
+        return string.format("%d", math.floor(total))
+      end
+    end
+  end
+
+  -- 3. 中文亿: 如 "1.2亿"
+  local yi_str = string.match(s, "([%d%.]+)%s*亿")
+  if yi_str then
+    local yi_num = tonumber(yi_str)
+    if yi_num then
+      local total = yi_num * 100000000
+      if total >= 1000000000 then
+        return string.format("%.1fB", total / 1000000000)
+      else
+        local m = math.floor(total / 1000000 + 0.5)
+        return string.format("%dM", m)
+      end
+    end
+  end
+
+  -- 4. 纯数字纯文本 (如 "17430000")
+  local pure_digits = string.match(s, "^([%d,]+)$")
+  if pure_digits then
+    local clean = string.gsub(pure_digits, ",", "")
+    local n = tonumber(clean)
+    if n then
+      if n >= 1000000000 then
+        return string.format("%.1fB", n / 1000000000)
+      elseif n >= 10000000 then
+        return string.format("%dM", math.floor(n / 1000000 + 0.5))
+      elseif n >= 1000000 then
+        return string.format("%.1fM", n / 1000000)
+      elseif n >= 1000 then
+        return string.format("%dK", math.floor(n / 1000 + 0.5))
+      end
+    end
+  end
+
+  return nil
+end
+
 return nav

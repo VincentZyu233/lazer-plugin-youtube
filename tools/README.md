@@ -1,6 +1,18 @@
 # Lazer YouTube Music 登录与凭据获取工具 (v2.0)
 
-本目录提供了全自动的 YouTube Music 登录与凭据获取工具，支持 **4 种灵活的登录模式**，满足从普通听歌用户到极客开发者的不同需求。
+本目录提供了全自动的 YouTube Music 登录凭据获取工具以及插件的一键校验构建脚本，支持 **4 种灵活的登录模式**，满足从普通听歌用户到极客开发者的不同需求。
+
+---
+
+## 🌲 目录结构与工具清单 (Tree)
+
+```text
+tools/
+├── build.js         # 插件生产环境打包构建脚本 (校验 manifest.json、计算 SHA-256、压缩 dist/lazer.youtube.zip)
+├── get_cookie.js    # YouTube / YouTube Music 交互式与命令行全自动凭据提取工具 (支持 4 种登录模式)
+├── mini_qr.js       # 纯原生无依赖终端字符画二维码 & 极简高清矢量二维码轻量生成引擎
+└── README.md        # 工具链详细使用说明与参数文档
+```
 
 ---
 

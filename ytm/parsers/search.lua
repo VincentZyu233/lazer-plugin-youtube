@@ -90,41 +90,48 @@ function search_parser.parse_song_item(it, query, seen_songs, default_artist)
   local album_name = ""
   local album_id = nil
   local dur_ms = 0
+  local raw_play_text = nil
 
   for c_idx = 2, #cols do
     local col_rend = cols[c_idx].musicResponsiveListItemFlexColumnRenderer
     if col_rend and col_rend.text and col_rend.text.runs then
       for _, r in ipairs(col_rend.text.runs) do
         local t = r.text or ""
-        local endpoint = nav.nav(r, { "navigationEndpoint", "browseEndpoint" }) or {}
-        local config_endpoint = nav.nav(endpoint, {
-          "browseEndpointContextSupportedConfigs",
-          "browseEndpointContextMusicConfig"
-        })
-        local page_type = config_endpoint and config_endpoint.pageType
-        local b_id = endpoint.browseId
+        local trimmed = nav.trim_str(t)
 
-        if page_type == "MUSIC_PAGE_TYPE_ARTIST" or page_type == "MUSIC_PAGE_TYPE_USER_CHANNEL" then
-          local trimmed = nav.trim_str(t)
-          if string.len(trimmed) > 0 and trimmed ~= "•" and trimmed ~= "·" and trimmed ~= "・" then
+        if string.len(trimmed) > 0 and trimmed ~= "•" and trimmed ~= "·" and trimmed ~= "・"
+           and trimmed ~= "歌曲" and trimmed ~= "单曲" and trimmed ~= "视频" and trimmed ~= "Song" and trimmed ~= "Video"
+           and trimmed ~= "曲" and trimmed ~= "動画" and trimmed ~= "和" and trimmed ~= "、" and trimmed ~= "&" then
+
+          local endpoint = nav.nav(r, { "navigationEndpoint", "browseEndpoint" }) or {}
+          local config_endpoint = nav.nav(endpoint, {
+            "browseEndpointContextSupportedConfigs",
+            "browseEndpointContextMusicConfig"
+          })
+          local page_type = config_endpoint and config_endpoint.pageType
+          local b_id = endpoint.browseId
+
+          -- 优先检查是否为播放量/统计数文本 (如 "播放次数：1743万", "17M views", "850K")
+          if nav.is_play_count(trimmed) then
+            if not raw_play_text then
+              raw_play_text = trimmed
+            end
+          elseif page_type == "MUSIC_PAGE_TYPE_ARTIST" or page_type == "MUSIC_PAGE_TYPE_USER_CHANNEL" then
             table.insert(song_artists, {
               id = b_id or ("yt_artist_" .. vid),
               name = trimmed,
               coverUrl = ""
             })
-          end
-        elseif page_type == "MUSIC_PAGE_TYPE_ALBUM" then
-          album_name = nav.trim_str(t)
-          album_id = b_id
-        else
-          local ms = nav.parse_time_to_ms(t)
-          if ms > 0 then
-            dur_ms = ms
+          elseif page_type == "MUSIC_PAGE_TYPE_ALBUM" then
+            album_name = trimmed
+            album_id = b_id
           else
-            local trimmed = nav.trim_str(t)
-            if string.len(trimmed) > 0 and trimmed ~= "•" and trimmed ~= "·" and trimmed ~= "・"
-               and trimmed ~= "歌曲" and trimmed ~= "单曲" and trimmed ~= "视频" and trimmed ~= "Song" and trimmed ~= "Video"
-               and trimmed ~= "曲" and trimmed ~= "動画" then
+            -- 检查是否为时间 (如 "03:45" 或 "1:02:15")
+            local ms = nav.parse_time_to_ms(trimmed)
+            if ms > 0 then
+              dur_ms = ms
+            elseif not string.match(trimmed, "^%d%d%d%d年?$") then
+              -- 若非发行年份且不是播放量，且当前尚无任何歌手，作为候选歌手兜底
               if #song_artists == 0 and (not b_id or b_id == "") then
                 table.insert(song_artists, {
                   id = "yt_artist_" .. vid,
@@ -160,7 +167,7 @@ function search_parser.parse_song_item(it, query, seen_songs, default_artist)
       if type(default_artist) == "table" then
         table.insert(song_artists, {
           id = default_artist.id or ("yt_artist_" .. vid),
-          name = default_artist.name or "YouTube Music",
+          name = default_artist.name or "Unknown Artist",
           coverUrl = default_artist.coverUrl or ""
         })
       else
@@ -173,9 +180,22 @@ function search_parser.parse_song_item(it, query, seen_songs, default_artist)
     else
       table.insert(song_artists, {
         id = "yt_artist_" .. vid,
-        name = "YouTube Music",
+        name = "Unknown Artist",
         coverUrl = ""
       })
+    end
+  end
+
+  -- 格式化播放量前缀与专辑名称 (K / M / B 国际化格式)
+  local fmt_play = nav.format_play_count(raw_play_text)
+  local play_prefix = fmt_play and ("[" .. fmt_play .. " 播放] ") or "[未知播放] "
+
+  local clean_album = album_name
+  if not clean_album or string.len(clean_album) == 0 then
+    if string.len(title) > 0 and title ~= "Unknown Track" then
+      clean_album = title
+    else
+      clean_album = "未知专辑"
     end
   end
 
@@ -186,7 +206,7 @@ function search_parser.parse_song_item(it, query, seen_songs, default_artist)
     title = title,
     artists = song_artists,
     albumId = album_id,
-    albumName = string.len(album_name) > 0 and album_name or "YouTube Music",
+    albumName = play_prefix .. clean_album,
     coverUrl = cover_url,
     durationMs = dur_ms
   }
