@@ -1,3 +1,7 @@
-# Enable Markdown in GitHub language statistics
-*.md linguist-detectable=true linguist-documentation=false
-*.markdown linguist-detectable=true linguist-documentation=false
+# GitHub language statistics configuration
+# Exclude documentation directories from language statistics
+docs/** linguist-documentation=true linguist-detectable=false
+temp/** linguist-documentation=true linguist-detectable=false
+
+# Only count root README in statistics
+README.md linguist-detectable=true linguist-documentation=false

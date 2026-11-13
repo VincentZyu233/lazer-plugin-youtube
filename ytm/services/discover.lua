@@ -5,6 +5,7 @@ local browse_parser = require("ytm.parsers.browse")
 local search_parser = require("ytm.parsers.search")
 
 local discover_service = {}
+local cached_user_mixes = {}
 
 --- 首页探索推荐流 (对齐 Lazer MusicHome 契约)
 function discover_service.home_feed()
@@ -15,8 +16,29 @@ function discover_service.home_feed()
   local data = transport.post_music("browse", payload, constants.CLIENT_WEB_REMIX)
   local feed = browse_parser.parse_home_feed(data)
 
-  -- 若首屏未直接给出单曲卡片，取推荐第 1 歌单的曲目填充 quick 与 daily (单次快速请求)
-  -- 这样 Lazer 顶部的“每日推荐”卡片将立刻激活高亮可点！
+  -- 1. 更新或提取用户专属 Mix 快照 (归档合辑/重放合辑/发现合辑/新歌合辑)
+  if feed.userMixes and #feed.userMixes > 0 then
+    cached_user_mixes = feed.userMixes
+  end
+
+  -- 2. 无论当前首页是否被单曲推荐冲刷，永远将专属 Mix 稳稳置顶在 editorialPlaylists
+  --    主页中段 100% 稳定呈现 YouTube 官方下发的高级 mixart 几何艺术封面！
+  if #cached_user_mixes > 0 then
+    local existing_ids = {}
+    for _, p in ipairs(feed.editorialPlaylists) do
+      existing_ids[p.id] = true
+    end
+    for i = #cached_user_mixes, 1, -1 do
+      local mix = cached_user_mixes[i]
+      if not existing_ids[mix.id] then
+        existing_ids[mix.id] = true
+        table.insert(feed.editorialPlaylists, 1, mix)
+      end
+    end
+  end
+
+  -- 3. 若首屏未直接给出单曲卡片，取推荐第 1 歌单的曲目填充 quick 与 daily (单次快速请求)
+  --    这样 Lazer 顶部的“每日推荐”与底部的“为你创建的电台”将拥有饱满的单曲封面供 _MovingCoverMosaic 平移！
   if #feed.quick == 0 and #feed.recommended > 0 then
     local first_pl = feed.recommended[1]
     local pl_data = transport.post_music("browse", {

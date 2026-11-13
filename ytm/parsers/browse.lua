@@ -61,7 +61,8 @@ function browse_parser.parse_home_feed(data)
     recommended = {},
     playlists = {},
     albums = {},
-    editorialPlaylists = {}
+    editorialPlaylists = {},
+    userMixes = {}
   }
   if not data or type(data) ~= "table" then return feed end
 
@@ -92,8 +93,17 @@ function browse_parser.parse_home_feed(data)
           local thumbs = nav.nav(r, { "thumbnailRenderer", "musicThumbnailRenderer", "thumbnail", "thumbnails" })
           if thumbs then thumb = nav.extract_thumbnail(thumbs) end
 
+          -- 1.1 若带有 browseEndpoint，判定歌单/专辑/专属合辑
           if b_id and string.len(title) > 0 then
-            local is_playlist = (page_type == "MUSIC_PAGE_TYPE_PLAYLIST")
+            local is_user_mix = (string.sub(b_id, 1, 6) == "VLRDTM")
+                             or (string.sub(b_id, 1, 4) == "RDTM")
+                             or (b_id == "VLLM")
+                             or (string.find(title, "合辑") ~= nil)
+                             or (string.find(title, "Mix") ~= nil)
+                             or (string.find(title, "Supermix") ~= nil)
+
+            local is_playlist = is_user_mix
+                             or (page_type == "MUSIC_PAGE_TYPE_PLAYLIST")
                              or (string.sub(b_id, 1, 2) == "VL")
                              or (string.sub(b_id, 1, 2) == "PL")
                              or (string.sub(b_id, 1, 4) == "RDCL")
@@ -115,6 +125,9 @@ function browse_parser.parse_home_feed(data)
                 table.insert(feed.recommended, pl)
                 table.insert(feed.playlists, pl)
                 table.insert(feed.editorialPlaylists, pl)
+                if is_user_mix then
+                  table.insert(feed.userMixes, pl)
+                end
               end
             elseif is_album then
               if not seen_alb[b_id] then
@@ -127,6 +140,23 @@ function browse_parser.parse_home_feed(data)
                 }
                 table.insert(feed.albums, alb)
               end
+            end
+          else
+            -- 1.2 若带的是 watchEndpoint (单曲卡片)，提取单曲为跑马灯动画丰富素材库
+            local watch_ep = nav.nav(r, { "navigationEndpoint", "watchEndpoint" })
+            local vid = watch_ep and watch_ep.videoId
+            if vid and string.len(vid) > 0 and not seen_songs[vid] then
+              seen_songs[vid] = true
+              local s = {
+                id = vid,
+                title = title,
+                artists = { { id = "yt_artist_" .. vid, name = (sub ~= "" and sub or "YouTube Music"), coverUrl = "" } },
+                albumName = "YouTube Music",
+                coverUrl = thumb,
+                durationMs = 0
+              }
+              table.insert(feed.quick, s)
+              table.insert(feed.daily, s)
             end
           end
         end
