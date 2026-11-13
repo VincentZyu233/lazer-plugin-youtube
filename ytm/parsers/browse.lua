@@ -33,7 +33,7 @@ end
 --- 解析喜欢/收藏列表 (VLLM)
 function browse_parser.parse_favorites(data)
   if not data or type(data) ~= "table" then
-    return {}
+    return {}, nil
   end
 
   local music_items = {}
@@ -50,7 +50,53 @@ function browse_parser.parse_favorites(data)
     end
   end
 
-  return songs
+  -- 提取后续分页 Continuation Token
+  local shelf = nav.nav(data, {
+    "contents", "twoColumnBrowseResultsRenderer", "secondaryContents",
+    "sectionListRenderer", "contents", 1, "musicPlaylistShelfRenderer", "contents"
+  }) or nav.nav(data, {
+    "contents", "singleColumnBrowseResultsRenderer", "tabs", 1, "tabRenderer",
+    "content", "sectionListRenderer", "contents", 1, "musicPlaylistShelfRenderer", "contents"
+  }) or {}
+
+  local token = nil
+  for _, it in ipairs(shelf) do
+    if it.continuationItemRenderer then
+      token = nav.nav(it, { "continuationItemRenderer", "continuationEndpoint", "continuationCommand", "token" })
+      if token then break end
+    end
+  end
+
+  return songs, token
+end
+
+--- 解析 Continuation 增量分页歌曲与下一页 Token
+function browse_parser.parse_continuation_songs(data, seen_songs)
+  if not data or type(data) ~= "table" then
+    return {}, nil
+  end
+
+  local items = nav.nav(data, { "onResponseReceivedActions", 1, "appendContinuationItemsAction", "continuationItems" })
+             or nav.nav(data, { "continuationContents", "musicPlaylistShelfContinuation", "contents" })
+             or {}
+
+  local songs = {}
+  local next_token = nil
+  seen_songs = seen_songs or {}
+
+  for _, it in ipairs(items) do
+    if it.continuationItemRenderer then
+      next_token = nav.nav(it, { "continuationItemRenderer", "continuationEndpoint", "continuationCommand", "token" })
+    else
+      local s = search_parser.parse_song_item(it, nil, seen_songs)
+      if s then
+        s.starred = true
+        table.insert(songs, s)
+      end
+    end
+  end
+
+  return songs, next_token
 end
 
 --- 解析首页 FEmusic_home 推荐流，对齐 Lazer MusicHome 数据契约

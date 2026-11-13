@@ -175,6 +175,68 @@ function catalog_service.playlist_songs(playlist_id, limit, offset)
   return paged
 end
 
+local cached_favs = nil
+local cached_favs_time = 0
+
+--- 专辑详情业务
+function catalog_service.album(album_id)
+  local aid = tostring(album_id or "")
+  if string.len(aid) == 0 then return nil end
+
+  transport.ensure_visitor_data()
+  local ok, data = pcall(transport.post_music, "browse", { browseId = aid }, constants.CLIENT_WEB_REMIX)
+  if not ok or not data then return nil end
+
+  local header = browse_parser.parse_playlist_header(data, aid)
+  local songs = browse_parser.parse_playlist_songs(data)
+  return {
+    id = aid,
+    title = header and header.name or "Album",
+    name = header and header.name or "Album",
+    coverUrl = header and header.coverUrl or (songs[1] and songs[1].coverUrl or ""),
+    artists = { { id = "yt_artist_unk", name = header and header.owner or "YouTube Music" } },
+    songCount = songs and #songs or 0,
+    description = header and header.description or ""
+  }
+end
+
+--- 专辑歌曲列表业务
+function catalog_service.album_songs(album_id, limit, offset)
+  return catalog_service.playlist_songs(album_id, limit, offset)
+end
+
+--- 歌手详情业务
+function catalog_service.artist(artist_id)
+  local aid = tostring(artist_id or "")
+  if string.len(aid) == 0 then return nil end
+
+  transport.ensure_visitor_data()
+  local ok, data = pcall(transport.post_music, "browse", { browseId = aid }, constants.CLIENT_WEB_REMIX)
+  if not ok or not data then return nil end
+
+  local hdr = nav.nav(data, { "header", "musicImmersiveHeaderRenderer" })
+           or nav.nav(data, { "header", "musicVisualHeaderRenderer" })
+           or {}
+  local name = nav.nav(hdr, { "title", "runs", 1, "text" }) or "Artist"
+  local desc = nav.nav(hdr, { "description", "runs", 1, "text" }) or ""
+  local cover_url = ""
+  local thumbs = nav.nav(hdr, { "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails" })
+  if thumbs then cover_url = nav.extract_thumbnail(thumbs) end
+
+  return {
+    id = aid,
+    name = name,
+    coverUrl = cover_url,
+    description = desc,
+    albumCount = 0
+  }
+end
+
+--- 歌手热门歌曲列表业务
+function catalog_service.artist_songs(artist_id, limit, offset)
+  return catalog_service.playlist_songs(artist_id, limit, offset)
+end
+
 --- 我喜欢的音乐 (VLLM)
 function catalog_service.favorites(args)
   local cookie = store.get_cookie()
@@ -182,11 +244,128 @@ function catalog_service.favorites(args)
     return {}
   end
 
+  local limit = 100
+  local offset = 0
+  if type(args) == "table" then
+    limit = tonumber(args.limit) or 100
+    offset = tonumber(args.offset) or 0
+  end
+
+  local now = os.time()
+  -- 若缓存为空，或超过 60 秒且是第 1 页请求，重新全量同步
+  if not cached_favs or (now - cached_favs_time > 60 and offset == 0) then
+    local payload = {
+      browseId = "VLLM"
+    }
+    local ok, data = pcall(transport.post_music, "browse", payload, constants.CLIENT_WEB_REMIX)
+    if ok and data then
+      local songs, next_token = browse_parser.parse_favorites(data)
+      local all_songs = songs or {}
+      local seen = {}
+      for _, s in ipairs(all_songs) do seen[s.id] = true end
+
+      -- 遍历 continuation tokens，拉取 100 首以后的全部收藏曲目
+      local loop_count = 0
+      while next_token and loop_count < 15 do
+        loop_count = loop_count + 1
+        local cont_payload = { continuation = next_token }
+        local c_ok, c_data = pcall(transport.post_music, "browse", cont_payload, constants.CLIENT_WEB_REMIX)
+        if c_ok and c_data then
+          local more_songs, new_token = browse_parser.parse_continuation_songs(c_data, seen)
+          if more_songs and #more_songs > 0 then
+            for _, s in ipairs(more_songs) do
+              table.insert(all_songs, s)
+            end
+          else
+            break
+          end
+          next_token = new_token
+        else
+          break
+        end
+      end
+
+      cached_favs = all_songs
+      cached_favs_time = now
+    end
+  end
+
+  cached_favs = cached_favs or {}
+
+  local paged = {}
+  for i = offset + 1, math.min(#cached_favs, offset + limit) do
+    table.insert(paged, cached_favs[i])
+  end
+
+  return paged
+end
+
+--- 收藏/取消收藏单曲 (setFavorite)
+function catalog_service.set_favorite(args)
+  local cookie = store.get_cookie()
+  if not cookie or string.len(cookie) == 0 then
+    return false
+  end
+
+  local vid = ""
+  local favorite = true
+  if type(args) == "table" then
+    vid = tostring(args.id or args.songId or "")
+    if args.favorite ~= nil then
+      favorite = (args.favorite == true or args.favorite == "true" or args.favorite == 1)
+    end
+  end
+
+  if string.len(vid) == 0 then
+    return false
+  end
+
+  local endpoint = favorite and "like/like" or "like/removelike"
   local payload = {
-    browseId = "VLLM"
+    target = {
+      videoId = vid
+    }
   }
-  local data = transport.post_music("browse", payload, constants.CLIENT_WEB_REMIX)
-  return browse_parser.parse_favorites(data)
+
+  local ok, res = pcall(transport.post_music, endpoint, payload, constants.CLIENT_WEB_REMIX)
+
+  -- 立即联动更新内存中的收藏列表缓存
+  if cached_favs then
+    if favorite then
+      local exists = false
+      for _, s in ipairs(cached_favs) do
+        if s.id == vid then
+          exists = true
+          break
+        end
+      end
+      if not exists then
+        local s_info = catalog_service.song(vid)
+        if s_info then
+          s_info.starred = true
+          table.insert(cached_favs, 1, s_info)
+        else
+          table.insert(cached_favs, 1, {
+            id = vid,
+            title = "Liked Song",
+            artists = { { id = "yt_artist_unk", name = "YouTube Music" } },
+            durationMs = 0,
+            coverUrl = "",
+            starred = true
+          })
+        end
+      end
+    else
+      for i, s in ipairs(cached_favs) do
+        if s.id == vid then
+          table.remove(cached_favs, i)
+          break
+        end
+      end
+    end
+  end
+
+  return ok and res ~= nil
 end
 
 return catalog_service

@@ -177,13 +177,63 @@ function search_parser.parse_search_results(data, query)
     return { songs = songs, albums = albums, artists = artists, playlists = playlists }
   end
 
+  -- 0. 优先提取置顶大卡片 (musicCardShelfRenderer，如权威歌手/官方专辑)
+  local first_sec = nav.nav(data, {
+    "contents", "tabbedSearchResultsRenderer", "tabs", 1, "tabRenderer",
+    "content", "sectionListRenderer", "contents", 1
+  })
+  if first_sec and first_sec.musicCardShelfRenderer then
+    local card = first_sec.musicCardShelfRenderer
+    local card_title = nav.nav(card, { "title", "runs", 1, "text" }) or ""
+    local card_sub = nav.nav(card, { "subtitle", "runs", 1, "text" }) or ""
+    local card_ep = nav.nav(card, { "title", "runs", 1, "navigationEndpoint", "browseEndpoint" }) or {}
+    local card_config = nav.nav(card_ep, {
+      "browseEndpointContextSupportedConfigs",
+      "browseEndpointContextMusicConfig"
+    })
+    local card_pt = card_config and card_config.pageType
+    local card_bid = card_ep.browseId
+
+    local card_cover = ""
+    local card_thumbs = nav.nav(card, { "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails" })
+    if card_thumbs then
+      card_cover = nav.extract_thumbnail(card_thumbs)
+    end
+
+    card_title = nav.trim_str(card_title)
+    if string.len(card_title) > 0 then
+      if card_pt == "MUSIC_PAGE_TYPE_ARTIST" or (card_bid and string.sub(card_bid, 1, 2) == "UC") or string.find(card_sub, "音乐人") or string.find(card_sub, "歌手") or string.find(card_sub, "Artist") then
+        local art_id = card_bid or ("yt_artist_" .. card_title)
+        seen_artists[art_id] = true
+        table.insert(artists, {
+          id = art_id,
+          name = card_title,
+          coverUrl = card_cover
+        })
+      elseif card_pt == "MUSIC_PAGE_TYPE_ALBUM" or (card_bid and string.sub(card_bid, 1, 6) == "MPREb_") or string.find(card_sub, "专辑") or string.find(card_sub, "EP") or string.find(card_sub, "Album") then
+        local alb_id = card_bid or ("yt_album_" .. card_title)
+        seen_albums[alb_id] = true
+        table.insert(albums, {
+          id = alb_id,
+          title = card_title,
+          name = card_title,
+          coverUrl = card_cover,
+          artists = { { id = "yt_artist_unk", name = card_sub ~= "" and card_sub or "YouTube Music" } },
+          songCount = 0
+        })
+      end
+    end
+  end
+
   local music_items = {}
   nav.find_music_items(data, music_items)
 
   for _, it in ipairs(music_items) do
-    local endpoint = nav.nav(it, {
-      "flexColumns", 1, "musicResponsiveListItemFlexColumnRenderer", "text", "runs", 1, "navigationEndpoint", "browseEndpoint"
-    })
+    -- 提取导航 Endpoint (支持根节点 it.navigationEndpoint 与 flexColumns 内部)
+    local endpoint = nav.nav(it, { "navigationEndpoint", "browseEndpoint" })
+                  or nav.nav(it, {
+                    "flexColumns", 1, "musicResponsiveListItemFlexColumnRenderer", "text", "runs", 1, "navigationEndpoint", "browseEndpoint"
+                  })
     local config_endpoint = nav.nav(endpoint, {
       "browseEndpointContextSupportedConfigs",
       "browseEndpointContextMusicConfig"
@@ -205,7 +255,38 @@ function search_parser.parse_search_results(data, query)
       cover_url = nav.extract_thumbnail(thumbs)
     end
 
-    if page_type == "MUSIC_PAGE_TYPE_ARTIST" then
+    -- 读取第二列副标题与类型描述 (例如 "音乐人 • 每月听众", "专辑 • 2021", "播放列表 • 作者")
+    local type_label = ""
+    local subtitle_owner = ""
+    local col2_runs = nav.nav(it, {
+      "flexColumns", 2, "musicResponsiveListItemFlexColumnRenderer", "text", "runs"
+    })
+    if col2_runs and #col2_runs > 0 then
+      if col2_runs[1].text then
+        type_label = nav.trim_str(col2_runs[1].text)
+      end
+      for idx = 2, #col2_runs do
+        local r = col2_runs[idx]
+        if r.text and r.text ~= " • " and r.text ~= "•" and nav.trim_str(r.text) ~= "" then
+          subtitle_owner = nav.trim_str(r.text)
+          break
+        end
+      end
+    end
+
+    local is_artist = (page_type == "MUSIC_PAGE_TYPE_ARTIST")
+                   or (browse_id and string.sub(browse_id, 1, 2) == "UC")
+                   or (type_label == "音乐人" or type_label == "歌手" or type_label == "Artist")
+
+    local is_album = (page_type == "MUSIC_PAGE_TYPE_ALBUM")
+                  or (browse_id and string.sub(browse_id, 1, 6) == "MPREb_")
+                  or (type_label == "专辑" or type_label == "EP" or type_label == "单曲" or type_label == "Album")
+
+    local is_playlist = (page_type == "MUSIC_PAGE_TYPE_PLAYLIST")
+                     or (browse_id and (string.sub(browse_id, 1, 2) == "VL" or string.sub(browse_id, 1, 2) == "PL"))
+                     or (type_label == "播放列表" or type_label == "歌单" or type_label == "Playlist")
+
+    if is_artist then
       local art_id = browse_id or ("yt_artist_" .. title)
       if not seen_artists[art_id] and string.len(title) > 0 then
         seen_artists[art_id] = true
@@ -215,27 +296,32 @@ function search_parser.parse_search_results(data, query)
           coverUrl = cover_url
         })
       end
-    elseif page_type == "MUSIC_PAGE_TYPE_ALBUM" then
+    elseif is_album then
       local alb_id = browse_id or ("yt_album_" .. title)
       if not seen_albums[alb_id] and string.len(title) > 0 then
         seen_albums[alb_id] = true
+        local artist_name = subtitle_owner ~= "" and subtitle_owner or "YouTube Music"
         table.insert(albums, {
           id = alb_id,
           title = title,
+          name = title,
           coverUrl = cover_url,
-          artists = { { id = "yt_artist_unk", name = "YouTube Music" } },
+          artists = { { id = "yt_artist_" .. artist_name, name = artist_name } },
           songCount = 0
         })
       end
-    elseif page_type == "MUSIC_PAGE_TYPE_PLAYLIST" then
+    elseif is_playlist then
       local pl_id = browse_id or ("yt_playlist_" .. title)
       if not seen_playlists[pl_id] and string.len(title) > 0 then
         seen_playlists[pl_id] = true
+        local owner_name = subtitle_owner ~= "" and subtitle_owner or "YouTube Music"
         table.insert(playlists, {
           id = pl_id,
+          name = title,
           title = title,
           coverUrl = cover_url,
-          songCount = 0
+          songCount = 0,
+          owner = owner_name
         })
       end
     else

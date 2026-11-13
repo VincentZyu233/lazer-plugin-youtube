@@ -13,6 +13,7 @@ local CAPABILITIES = {
   "search",
   "lyrics",
   "playlists",
+  "browseAlbums",
   "homeFeed",
   "charts",
   "radio",
@@ -71,6 +72,24 @@ function plugin.call(operation, args)
     return lyrics.get_lyrics(song_id)
   elseif operation == "favorites" then
     return catalog.favorites(args)
+  elseif operation == "setFavorite" then
+    return catalog.set_favorite(args)
+  elseif operation == "album" then
+    local album_id = args.id or args.albumId or ""
+    return catalog.album(album_id)
+  elseif operation == "albumSongs" then
+    local album_id = args.id or args.albumId or ""
+    local limit = tonumber(args.limit) or 50
+    local offset = tonumber(args.offset) or 0
+    return catalog.album_songs(album_id, limit, offset)
+  elseif operation == "artist" then
+    local artist_id = args.id or args.artistId or ""
+    return catalog.artist(artist_id)
+  elseif operation == "artistSongs" then
+    local artist_id = args.id or args.artistId or ""
+    local limit = tonumber(args.limit) or 50
+    local offset = tonumber(args.offset) or 0
+    return catalog.artist_songs(artist_id, limit, offset)
   elseif operation == "homeFeed" then
     return discover.home_feed()
   elseif operation == "recommendations" then
