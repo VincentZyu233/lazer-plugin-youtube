@@ -76,8 +76,19 @@ function transport.request(url_or_endpoint, payload, client_profile, target_host
 
   -- 对标 yt-dlp: VISIONOS 客户端为 SUPPORTS_COOKIES = False，切勿注入 Web Cookie 与 SAPISIDHASH，否则 YouTube 会拒绝并报 HTTP 400
   if not is_visionos then
+    local access_token = store.get_access_token()
     local cookie = store.get_cookie()
-    if cookie and string.len(cookie) > 0 then
+
+    if access_token and string.len(access_token) > 0 then
+      -- OAuth 扫码登录模式 (Bearer Token + 自动静默续期)
+      local oauth = require("ytm.auth.oauth")
+      oauth.ensure_valid_token()
+      access_token = store.get_access_token()
+
+      headers["Authorization"] = "Bearer " .. access_token
+      headers["X-Goog-Request-Time"] = tostring(store.now_sec())
+    elseif cookie and string.len(cookie) > 0 then
+      -- Cookie 导入模式 (Cookie + SAPISIDHASH)
       headers["Cookie"] = cookie
       if not is_mobile then
         local auth_header = auth_cookie.generate_authorization(cookie, origin)

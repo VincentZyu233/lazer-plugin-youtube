@@ -31,9 +31,9 @@ function plugin.call(operation, args)
         {
           id = "youtube",
           name = "YouTube Music",
-          auth = { "cookie" },
+          auth = { "qr", "cookie" },
           capabilities = CAPABILITIES,
-          loginHint = "在浏览器中打开 music.youtube.com，复制网络请求中的 Cookie 粘贴到下方即可登录",
+          loginHint = "使用手机相机或浏览器扫描屏幕二维码直接授权登录，或在下方粘贴 Cookie 登录",
           cookieHint = "支持包含 SID, HSID, SSID, SAPISID 的 Cookie 字符串"
         }
       }
@@ -45,6 +45,12 @@ function plugin.call(operation, args)
     return account.session()
   elseif operation == "loginCookie" then
     return account.login_cookie(args)
+  elseif operation == "qrKey" then
+    return account.qrKey()
+  elseif operation == "qrUrl" then
+    return account.qrUrl(args)
+  elseif operation == "qrCheck" then
+    return account.qrCheck(args)
   elseif operation == "logout" then
     return account.logout()
   end

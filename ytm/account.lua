@@ -1,9 +1,12 @@
 local constants = require("ytm.core.constants")
 local store = require("ytm.core.store")
 local auth_cookie = require("ytm.auth.cookie")
+local oauth = require("ytm.auth.oauth")
 local nav = require("ytm.core.navigation")
 
 local account = {}
+
+local pending_sessions = {}
 
 --- 从 account_menu 的响应中提取当前登录账号的用户昵称与头像
 local function extract_account_info(data)
@@ -39,10 +42,53 @@ local function extract_account_info(data)
   return nil
 end
 
+--- 使用 Access Token 获取当前账号个人信息
+function account.fetch_current_user_info(access_token)
+  if not access_token or string.len(access_token) == 0 then return nil end
+
+  local payload = {
+    context = {
+      client = {
+        clientName = "WEB_REMIX",
+        clientVersion = "1.20261110.04.00",
+        hl = "zh-CN",
+        gl = "JP"
+      }
+    }
+  }
+
+  local req_headers = {
+    ["Content-Type"] = "application/json",
+    ["User-Agent"] = constants.CLIENT_WEB_REMIX.userAgent,
+    ["Origin"] = constants.HOST_MUSIC,
+    ["X-Origin"] = constants.HOST_MUSIC,
+    ["X-Goog-Api-Format-Version"] = "2",
+    ["Authorization"] = "Bearer " .. access_token,
+    ["X-Goog-Request-Time"] = tostring(store.now_sec())
+  }
+
+  local ok, res = pcall(function()
+    return host.http({
+      url = constants.HOST_MUSIC .. "/youtubei/v1/account/account_menu",
+      method = "POST",
+      headers = req_headers,
+      body = host.json_encode(payload)
+    })
+  end)
+
+  if ok and res and res.status == 200 and res.body then
+    local parse_ok, data = pcall(host.json_decode, res.body)
+    if parse_ok and data then
+      return extract_account_info(data)
+    end
+  end
+
+  return nil
+end
+
 --- 检查并返回当前已保存的会话
 function account.session()
-  local saved_cookie = store.get_cookie()
-  if not saved_cookie or string.len(saved_cookie) == 0 then
+  if not store.is_authenticated() then
     return nil
   end
 
@@ -57,7 +103,84 @@ function account.session()
   }
 end
 
---- 使用 Cookie 进行登录验证并持久化
+--- 获取扫码 Key (Lazer 契约: qrKey)
+function account.qrKey()
+  local res, err = oauth.request_device_code()
+  if res and res.device_code and res.user_code then
+    local user_code = tostring(res.user_code)
+    pending_sessions[user_code] = {
+      device_code = tostring(res.device_code),
+      user_code = user_code,
+      expires_at = store.now_sec() + (tonumber(res.expires_in) or 1800),
+      interval = tonumber(res.interval) or 5
+    }
+    return user_code
+  end
+  return nil
+end
+
+--- 获取扫码展示用的 URL (Lazer 契约: qrUrl)
+-- 官方 activation 链接自动带上 user_code 参数，手机扫描后自动填入验证码，用户只需直接点击下一步选择账号授权
+function account.qrUrl(args)
+  local key = tostring(args and args.key or "")
+  if key == "" then
+    return "https://youtube.com/activate"
+  end
+  return "https://youtube.com/activate?user_code=" .. host.url_encode(key)
+end
+
+--- 轮询二维码扫码与授权状态 (Lazer 契约: qrCheck)
+-- 契约状态码：801=等待扫码确认, 802=已扫码待确认, 803=成功, 800=过期/失效/拒绝
+function account.qrCheck(args)
+  local key = tostring(args and args.key or "")
+  if key == "" then return 800 end
+
+  local sess = pending_sessions[key]
+  if not sess then return 800 end
+
+  if store.now_sec() > sess.expires_at then
+    pending_sessions[key] = nil
+    return 800
+  end
+
+  local status, data = oauth.poll_token(sess.device_code)
+
+  if status == "success" and data and data.access_token then
+    pending_sessions[key] = nil
+
+    local access_token = tostring(data.access_token)
+    local refresh_token = tostring(data.refresh_token or "")
+    local expires_in = tonumber(data.expires_in) or 3600
+    local expires_at = store.now_sec() + expires_in
+
+    store.set_access_token(access_token)
+    if string.len(refresh_token) > 0 then
+      store.set_refresh_token(refresh_token)
+    end
+    store.set_expires_at(expires_at)
+
+    -- 异步/就地获取用户个人基本信息
+    local user_info = account.fetch_current_user_info(access_token)
+    local user_name = (user_info and user_info.name) or "YouTube 用户"
+    local user_avatar = (user_info and user_info.avatarUrl) or "https://www.youtube.com/s/desktop/9906d203/img/favicon_144x144.png"
+    local user_id = (user_info and user_info.handle) or ("yt_oauth_" .. string.sub(access_token, -8))
+
+    store.set("user_name", user_name)
+    store.set("user_avatar", user_avatar)
+    store.set("user_id", user_id)
+
+    return 803
+  elseif status == "pending" then
+    return 801
+  elseif status == "expired" then
+    pending_sessions[key] = nil
+    return 800
+  else
+    return 801
+  end
+end
+
+--- 使用 Cookie 进行登录验证并持久化 (保留 Cookie 导入能力)
 function account.login_cookie(args)
   local cookie_str = tostring(args and args.cookie or "")
   if string.len(cookie_str) == 0 then
@@ -127,6 +250,9 @@ end
 --- 退出登录
 function account.logout()
   store.set_cookie("")
+  store.set_access_token("")
+  store.set_refresh_token("")
+  store.set_expires_at(0)
   store.set("user_name", "")
   store.set("user_avatar", "")
   store.set("user_id", "")

@@ -1,8 +1,8 @@
 {
   "id": "lazer.youtube",
   "name": "YouTube Music",
-  "version": "0.1.15",
-  "description": "专为 Lazer 打造的 YouTube & YouTube Music Lua Gateway 插件，支持精准毫秒级逐行滚动歌词与高清音频流。",
+  "version": "0.2.0",
+  "description": "专为 Lazer 打造的 YouTube & YouTube Music Lua Gateway 插件，支持手机扫码直接授权登录、精准毫秒级逐行滚动歌词与高清音频流。",
   "author": "VincentZyu",
   "entry": "main.lua",
   "apiVersion": 1,
@@ -19,6 +19,7 @@
     "favorites"
   ],
   "auth": [
+    "qr",
     "cookie"
   ],
   "permissions": {
@@ -32,6 +33,8 @@
       "*.googleusercontent.com",
       "*.google.com",
       "google.com",
+      "*.googleapis.com",
+      "oauth2.googleapis.com",
       "cdn.jsdelivr.net",
       "raw.githubusercontent.com"
     ],

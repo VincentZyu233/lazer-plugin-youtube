@@ -348,8 +348,7 @@ end
 
 --- 我喜欢的音乐 (VLLM)
 function catalog_service.favorites(args)
-  local cookie = store.get_cookie()
-  if not cookie or string.len(cookie) == 0 then
+  if not store.is_authenticated() then
     return {}
   end
 
@@ -445,8 +444,7 @@ end
 
 --- 收藏/取消收藏单曲 (setFavorite)
 function catalog_service.set_favorite(args)
-  local cookie = store.get_cookie()
-  if not cookie or string.len(cookie) == 0 then
+  if not store.is_authenticated() then
     return false
   end
 
@@ -513,8 +511,7 @@ end
 
 --- 用户歌单列表 (提供个人“我喜欢的音乐”入口，准确呈现真实总曲目数与最新首曲封面)
 function catalog_service.playlists(args)
-  local cookie = store.get_cookie()
-  if not cookie or string.len(cookie) == 0 then return {} end
+  if not store.is_authenticated() then return {} end
 
   -- 若尚未拉取过喜欢列表元数据，执行一次静默快速同步获取真实曲目总数与封面
   if not cached_favs or #cached_favs == 0 then
