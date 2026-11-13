@@ -11,32 +11,32 @@ local cached_user_mixes = {}
 local OFFICIAL_FALLBACK_MIXES = {
   {
     id = "RDTMAK5uy_kset8DisdE7LSD4TNjEVnkKRTmG7a562Y8",
-    name = "我的超级合辑",
-    description = "专属个性化音乐合辑，汇聚你最喜爱的歌手与曲风",
+    name = "My Supermix",
+    description = "Endless personalized music blend tailored to your tastes",
     coverUrl = "https://cdn.jsdelivr.net/gh/VincentZyu233/lazer-plugin-youtube@main/assets/covers/cover_supermix.png",
     songCount = 0,
     owner = "YouTube Music"
   },
   {
     id = "RDTMAK5uy_m_jQ6oU5_130iJbN95_W4jWqQ7c-kC_rM",
-    name = "发现合辑",
-    description = "每周为你推荐新鲜好歌与潜在喜好",
+    name = "Discover Mix",
+    description = "Fresh music and hidden gems updated every week",
     coverUrl = "https://cdn.jsdelivr.net/gh/VincentZyu233/lazer-plugin-youtube@main/assets/covers/cover_discover_mix.png",
     songCount = 0,
     owner = "YouTube Music"
   },
   {
     id = "RDTMAK5uy_ksxU4WqD24u_Xk_hZfXQ65m7R3Z9Z6w",
-    name = "重放合辑",
-    description = "重温你近期反复聆听的挚爱旋律",
+    name = "Replay Mix",
+    description = "Your favorite songs on repeat",
     coverUrl = "https://cdn.jsdelivr.net/gh/VincentZyu233/lazer-plugin-youtube@main/assets/covers/cover_replay_mix.png",
     songCount = 0,
     owner = "YouTube Music"
   },
   {
     id = "RDTMAK5uy_l43N1o_GZJ25u1_Xq_hZfXQ65m7R3Z9Z6w",
-    name = "新歌合辑",
-    description = "为你喜爱的音乐人追踪最新发行",
+    name = "New Release Mix",
+    description = "The latest tracks from artists you love",
     coverUrl = "https://cdn.jsdelivr.net/gh/VincentZyu233/lazer-plugin-youtube@main/assets/covers/cover_archive_mix.png",
     songCount = 0,
     owner = "YouTube Music"

@@ -199,14 +199,14 @@ function search_parser.parse_song_item(it, query, seen_songs, default_artist)
 
   -- 格式化播放量前缀与专辑名称 (K / M / B 国际化格式)
   local fmt_play = nav.format_play_count(raw_play_text)
-  local play_prefix = fmt_play and ("[" .. fmt_play .. " 播放] ") or "[未知播放] "
+  local play_prefix = fmt_play and ("[" .. fmt_play .. "] ") or "[Unknown Plays] "
 
   local clean_album = album_name
   if not clean_album or string.len(clean_album) == 0 then
     if string.len(title) > 0 and title ~= "Unknown Track" then
       clean_album = title
     else
-      clean_album = "未知专辑"
+      clean_album = "Unknown Album"
     end
   end
 

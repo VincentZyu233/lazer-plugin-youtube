@@ -222,6 +222,8 @@ end
 local cached_favs = nil
 local cached_favs_time = 0
 local cached_favs_token = nil
+local cached_favs_total_count = nil
+local cached_favs_cover = nil
 
 --- 专辑详情业务
 function catalog_service.album(album_id)
@@ -362,11 +364,19 @@ function catalog_service.favorites(args)
       ok, data = pcall(transport.post_music, "browse", payload, constants.CLIENT_WEB_REMIX)
     end
     if ok and data then
-      local songs, next_token = browse_parser.parse_favorites(data)
+      local songs, next_token, total_count = browse_parser.parse_favorites(data)
       if songs and #songs > 0 then
         cached_favs = songs
         cached_favs_token = next_token
         cached_favs_time = now
+        if total_count and total_count > 0 then
+          cached_favs_total_count = total_count
+        else
+          cached_favs_total_count = math.max(#songs, cached_favs_total_count or 0)
+        end
+        if songs[1] and songs[1].coverUrl then
+          cached_favs_cover = songs[1].coverUrl
+        end
       end
     end
   end
@@ -466,6 +476,34 @@ function catalog_service.set_favorite(args)
   end
 
   return ok and res ~= nil
+end
+
+--- 用户歌单列表 (提供个人“我喜欢的音乐”入口，准确呈现真实总曲目数)
+function catalog_service.playlists(args)
+  local cookie = store.get_cookie()
+  if not cookie or string.len(cookie) == 0 then return {} end
+
+  -- 若尚未拉取过喜欢列表元数据，执行一次静默快速同步获取真实曲目总数与封面
+  if not cached_favs or #cached_favs == 0 then
+    catalog_service.favorites({ limit = 100, offset = 0 })
+  end
+
+  local user = account.get_user()
+  local user_name = user and user.name or ""
+  local total = cached_favs_total_count or (cached_favs and #cached_favs) or 100
+
+  local fav_pl = {
+    id = "VLLM",
+    name = (string.len(user_name) > 0 and user_name or "YouTube") .. "喜欢的音乐",
+    description = "Liked Songs on YouTube Music",
+    coverUrl = cached_favs_cover or "https://www.gstatic.com/youtube/media/ytm/images/pbg/liked-songs-delhi-576.png",
+    songCount = total,
+    writable = true,
+    isFavorites = true,
+    owner = user and user.id or "YouTube Music"
+  }
+
+  return { fav_pl }
 end
 
 return catalog_service

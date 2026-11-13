@@ -25,7 +25,7 @@ function browse_parser.parse_song_details(res, vid)
     artists = {
       { id = channel_id, name = author, coverUrl = "" }
     },
-    albumName = "[未知播放] " .. (string.len(title) > 0 and title or "未知专辑"),
+    albumName = "[Unknown Plays] " .. (string.len(title) > 0 and title or "Unknown Album"),
     coverUrl = cover_url,
     durationMs = dur_s * 1000
   }
@@ -34,7 +34,21 @@ end
 --- 解析喜欢/收藏列表 (VLLM)
 function browse_parser.parse_favorites(data)
   if not data or type(data) ~= "table" then
-    return {}, nil
+    return {}, nil, 0
+  end
+
+  -- 提取真实总曲目数 (如 "213 首歌曲" -> 213)
+  local total_count = 0
+  local hdr_text = nav.nav(data, {
+    "contents", "twoColumnBrowseResultsRenderer", "tabs", 1, "tabRenderer",
+    "content", "sectionListRenderer", "contents", 1, "musicResponsiveHeaderRenderer",
+    "secondSubtitle", "runs", 1, "text"
+  }) or nav.nav(data, {
+    "header", "musicResponsiveHeaderRenderer", "secondSubtitle", "runs", 1, "text"
+  })
+  if hdr_text then
+    local num = nav.extract_number(hdr_text)
+    if num and num > 0 then total_count = num end
   end
 
   local music_items = {}
@@ -68,7 +82,7 @@ function browse_parser.parse_favorites(data)
     end
   end
 
-  return songs, token
+  return songs, token, total_count
 end
 
 --- 解析 Continuation 增量分页歌曲与下一页 Token
@@ -186,7 +200,7 @@ function browse_parser.parse_home_sections(sec_list, feed, seen_pl, seen_alb, se
                 id = vid,
                 title = title,
                 artists = { { id = "yt_artist_" .. vid, name = (sub ~= "" and sub or "YouTube Music"), coverUrl = "" } },
-                albumName = "[未知播放] " .. (string.len(title) > 0 and title or "未知专辑"),
+                albumName = "[Unknown Plays] " .. (string.len(title) > 0 and title or "Unknown Album"),
                 coverUrl = thumb,
                 durationMs = 0
               }
@@ -480,7 +494,7 @@ function browse_parser.parse_artist_songs(data, artist_id)
                 id = vid,
                 title = t_title,
                 artists = { { id = tostring(artist_id or ""), name = "Artist", coverUrl = "" } },
-                albumName = "[未知播放] " .. (string.len(title) > 0 and title or "未知专辑"),
+                albumName = "[Unknown Plays] " .. (string.len(title) > 0 and title or "Unknown Album"),
                 coverUrl = cover,
                 durationMs = 0
               })

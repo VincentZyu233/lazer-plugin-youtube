@@ -166,7 +166,7 @@ function nav.split_lines(str)
 end
 
 --- 纯字符流提取数字 (完全脱离任何 Lua 正则 / 模式串，100% 兼容 Dart lua_dardo_plus 沙箱)
-local function extract_number(str)
+function nav.extract_number(str)
   if not str or type(str) ~= "string" then return nil end
   local len = string.len(str)
   local in_num = false
@@ -189,6 +189,7 @@ local function extract_number(str)
   end
   return nil
 end
+local extract_number = nav.extract_number
 
 --- 判断是否为播放量/统计数文本 (如 "播放次数：1743万", "17M views", "850K", "每月听众：70.4万")
 function nav.is_play_count(str)
@@ -269,18 +270,18 @@ function nav.format_play_count(str)
 
   if total >= 1000000000 then
     local b = total / 1000000000
-    return string.format("%.1fB", b)
+    return string.format("%.1fB Plays", b)
   elseif total >= 10000000 then
     local m = math.floor(total / 1000000 + 0.5)
-    return string.format("%dM", m)
+    return string.format("%dM Plays", m)
   elseif total >= 1000000 then
     local m = total / 1000000
-    return string.format("%.1fM", m)
+    return string.format("%.1fM Plays", m)
   elseif total >= 1000 then
     local k = math.floor(total / 1000 + 0.5)
-    return string.format("%dK", k)
+    return string.format("%dK Plays", k)
   else
-    return string.format("%d", math.floor(total))
+    return string.format("%d Plays", math.floor(total))
   end
 end
 
