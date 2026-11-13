@@ -206,6 +206,19 @@ function catalog_service.playlist_songs(playlist_id, limit, offset)
   return paged
 end
 
+--- 获取宿主安全毫秒时间戳 (坚决不访问全局 os.*)
+local function get_now_ms()
+  if host and type(host.now) == "function" then
+    local ok, t = pcall(host.now)
+    if ok and tonumber(t) then return tonumber(t) end
+  end
+  if type(os) == "table" and type(os.time) == "function" then
+    local ok, s = pcall(os.time)
+    if ok and tonumber(s) then return tonumber(s) * 1000 end
+  end
+  return 0
+end
+
 local cached_favs = nil
 local cached_favs_time = 0
 local cached_favs_token = nil
@@ -335,11 +348,11 @@ function catalog_service.favorites(args)
     offset = tonumber(args.offset) or 0
   end
 
-  local now = os.time()
-  -- 内存缓存防抖：若当前缓存尚在有效期内（<= 60 秒）且已有数据，首屏并发直接秒级返回，彻底杜绝重复请求超时
-  local is_cache_fresh = cached_favs and #cached_favs > 0 and (now - cached_favs_time <= 60)
+  local now = get_now_ms()
+  -- 内存缓存防抖：若当前缓存尚在有效期内（<= 60 秒 = 60000 毫秒）且已有数据，首屏并发直接秒级返回，彻底杜绝重复请求超时
+  local is_cache_fresh = cached_favs and #cached_favs > 0 and (now - cached_favs_time <= 60000)
 
-  if not is_cache_fresh and (not cached_favs or #cached_favs == 0 or (now - cached_favs_time > 120)) then
+  if not is_cache_fresh and (not cached_favs or #cached_favs == 0 or (now - cached_favs_time > 120000)) then
     local payload = {
       browseId = "VLLM"
     }
@@ -354,15 +367,6 @@ function catalog_service.favorites(args)
         cached_favs = songs
         cached_favs_token = next_token
         cached_favs_time = now
-        pcall(store.set, "cached_favs_snapshot", cached_favs)
-      end
-    else
-      -- 若网络临时抖动，从本地磁盘快照恢复
-      if not cached_favs or #cached_favs == 0 then
-        local s_ok, saved = pcall(store.get, "cached_favs_snapshot")
-        if s_ok and saved and type(saved) == "table" and #saved > 0 then
-          cached_favs = saved
-        end
       end
     end
   end

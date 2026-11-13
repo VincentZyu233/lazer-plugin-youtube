@@ -17,5 +17,7 @@ __pycache__/
 *.tmp
 temp/
 tmp/
+AGENTS.local.md
+*.local.md
 .DS_Store
 Thumbs.db

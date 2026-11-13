@@ -25,19 +25,21 @@ local function clean_song_title(title, query)
   clean = nav.trim_str(clean)
 
   -- 3. 分割处理复合标题 "A - B" 或 "A / B" (常见于 "日文名 - 英文译名" 或 "中文名 - 英文名")
-  local part1, sep, part2 = string.match(clean, "^(.-)%s+([%-/])%s+(.+)$")
-  if part1 and part2 then
-    part1 = nav.trim_str(part1)
-    part2 = nav.trim_str(part2)
-    local q_lower = string.lower(query or "")
-    local p1_lower = string.lower(part1)
-    local p2_lower = string.lower(part2)
+  local sep_idx = string.find(clean, " - ", 1, true) or string.find(clean, " / ", 1, true)
+  if sep_idx and sep_idx > 1 and sep_idx < string.len(clean) - 2 then
+    local part1 = nav.trim_str(string.sub(clean, 1, sep_idx - 1))
+    local part2 = nav.trim_str(string.sub(clean, sep_idx + 3))
+    if string.len(part1) > 0 and string.len(part2) > 0 then
+      local q_lower = string.lower(query or "")
+      local p1_lower = string.lower(part1)
+      local p2_lower = string.lower(part2)
 
-    if string.len(q_lower) > 0 then
-      if p1_lower == q_lower or string.find(q_lower, p1_lower, 1, true) or string.find(p1_lower, q_lower, 1, true) then
-        clean = part1
-      elseif p2_lower == q_lower or string.find(q_lower, p2_lower, 1, true) or string.find(p2_lower, q_lower, 1, true) then
-        clean = part2
+      if string.len(q_lower) > 0 then
+        if p1_lower == q_lower or string.find(q_lower, p1_lower, 1, true) or string.find(p1_lower, q_lower, 1, true) then
+          clean = part1
+        elseif p2_lower == q_lower or string.find(q_lower, p2_lower, 1, true) or string.find(p2_lower, q_lower, 1, true) then
+          clean = part2
+        end
       end
     end
   end
@@ -130,9 +132,18 @@ function search_parser.parse_song_item(it, query, seen_songs, default_artist)
             local ms = nav.parse_time_to_ms(trimmed)
             if ms > 0 then
               dur_ms = ms
-            elseif not string.match(trimmed, "^%d%d%d%d年?$") then
+            else
+              -- 检查是否为 4 位发行年份 (如 "2022" 或 "2022年")
+              local is_year = false
+              if string.len(trimmed) >= 4 then
+                local b1, b2, b3, b4 = string.byte(trimmed, 1, 4)
+                if b1 >= 48 and b1 <= 57 and b2 >= 48 and b2 <= 57 and b3 >= 48 and b3 <= 57 and b4 >= 48 and b4 <= 57 then
+                  is_year = true
+                end
+              end
+
               -- 若非发行年份且不是播放量，且当前尚无任何歌手，作为候选歌手兜底
-              if #song_artists == 0 and (not b_id or b_id == "") then
+              if not is_year and #song_artists == 0 and (not b_id or b_id == "") then
                 table.insert(song_artists, {
                   id = "yt_artist_" .. vid,
                   name = trimmed,
