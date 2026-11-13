@@ -12,7 +12,7 @@ from test_stream_nodes import test_stream_nodes
 
 def main():
     print("==================================================")
-    print(" Running Lazer YouTube Plugin Test Suite (v0.1.0)")
+    print(" Running Lazer YouTube Plugin Test Suite (v0.1.5)")
     print("==================================================")
 
     passed = 0

@@ -1,4 +1,4 @@
--- Lazer YouTube & YouTube Music Plugin (v0.1.0)
+-- Lazer YouTube & YouTube Music Plugin (v0.1.5)
 -- 架构设计参考 ytmusicapi：Parsers (纯数据清洗) / Services (网络与业务编排) / Core (通信底座)
 
 local account = require("ytm.account")
