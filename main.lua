@@ -60,14 +60,14 @@ function plugin.call(operation, args)
     local song_id = args.id or args.songId or ""
     return catalog.song(song_id)
   elseif operation == "playlist" then
-    local playlist_id = args.id or args.playlistId or ""
+    local playlist_id = (type(args) == "table" and (args.id or args.playlistId or args.playlist_id)) or tostring(args or "")
     return catalog.playlist(playlist_id)
   elseif operation == "playlists" then
     return {}
   elseif operation == "playlistSongs" then
-    local playlist_id = args.id or args.playlistId or ""
-    local limit = tonumber(args.limit) or 50
-    local offset = tonumber(args.offset) or 0
+    local playlist_id = (type(args) == "table" and (args.id or args.playlistId or args.playlist_id)) or tostring(args or "")
+    local limit = type(args) == "table" and (tonumber(args.limit) or 50) or 50
+    local offset = type(args) == "table" and (tonumber(args.offset) or 0) or 0
     return catalog.playlist_songs(playlist_id, limit, offset)
   elseif operation == "lyrics" then
     local song_id = args.id or args.songId or ""

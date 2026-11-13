@@ -133,7 +133,9 @@ function catalog_service.playlist(playlist_id)
   if string.len(pid) == 0 then return nil end
 
   -- 特殊处理：Lazer 内建喜欢歌单标识，重定向至 favorites
-  if pid == "__lazer_favorites__" or pid == "favorites" or pid == "VLLM" or pid == "LM" then
+  local is_fav = (pid == "__lazer_favorites__" or pid == "favorites" or pid == "VLLM" or pid == "LM"
+                  or string.find(pid, "favorites", 1, true) or string.find(pid, "喜欢", 1, true))
+  if is_fav then
     local favs = catalog_service.favorites({ limit = 100, offset = 0 })
     return {
       id = pid,
@@ -141,6 +143,7 @@ function catalog_service.playlist(playlist_id)
       description = "在 YouTube Music 标记为喜欢的曲目",
       coverUrl = (favs and favs[1] and favs[1].coverUrl) or "",
       songCount = (favs and #favs) or 0,
+      isFavorites = true,
       owner = store.get("user_name") or "YouTube Music"
     }
   end
@@ -179,7 +182,9 @@ function catalog_service.playlist_songs(playlist_id, limit, offset)
   if string.len(pid) == 0 then return {} end
 
   -- 特殊处理：Lazer 内建喜欢歌单标识，重定向至 favorites 业务
-  if pid == "__lazer_favorites__" or pid == "favorites" or pid == "VLLM" or pid == "LM" then
+  local is_fav = (pid == "__lazer_favorites__" or pid == "favorites" or pid == "VLLM" or pid == "LM"
+                  or string.find(pid, "favorites", 1, true) or string.find(pid, "喜欢", 1, true))
+  if is_fav then
     return catalog_service.favorites({ limit = limit, offset = offset })
   end
 
@@ -306,6 +311,16 @@ function catalog_service.artist_songs(artist_id, limit, offset)
   return paged
 end
 
+--- URL 安全编码回退
+local function safe_url_encode(s)
+  if host and type(host.url_encode) == "function" then
+    return host.url_encode(s)
+  end
+  return string.gsub(tostring(s or ""), "[^%w%-_%.~]", function(c)
+    return string.format("%%%02X", string.byte(c))
+  end)
+end
+
 --- 我喜欢的音乐 (VLLM)
 function catalog_service.favorites(args)
   local cookie = store.get_cookie()
@@ -321,8 +336,10 @@ function catalog_service.favorites(args)
   end
 
   local now = os.time()
-  -- 若是首屏 offset == 0，或者缓存已失效（> 120 秒）
-  if offset == 0 or not cached_favs or #cached_favs == 0 or (now - cached_favs_time > 120) then
+  -- 内存缓存防抖：若当前缓存尚在有效期内（<= 60 秒）且已有数据，首屏并发直接秒级返回，彻底杜绝重复请求超时
+  local is_cache_fresh = cached_favs and #cached_favs > 0 and (now - cached_favs_time <= 60)
+
+  if not is_cache_fresh and (not cached_favs or #cached_favs == 0 or (now - cached_favs_time > 120)) then
     local payload = {
       browseId = "VLLM"
     }
@@ -354,7 +371,7 @@ function catalog_service.favorites(args)
 
   -- 若请求的 offset 达到了当前缓存末尾，且存在后续 continuation 令牌，执行单次增量续拉
   if offset >= #cached_favs and cached_favs_token then
-    local query_url = "browse?continuation=" .. host.url_encode(cached_favs_token)
+    local query_url = "browse?continuation=" .. safe_url_encode(cached_favs_token)
     local c_ok, c_data = pcall(transport.post_music, query_url, {}, constants.CLIENT_WEB_REMIX)
     if c_ok and c_data then
       local seen = {}

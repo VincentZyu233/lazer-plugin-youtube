@@ -178,14 +178,17 @@ function nav.is_play_count(str)
      or string.find(s, "subscriber", 1, true) then
     return true
   end
-  if string.match(s, "^%d+[%d%.]*%s*[KMBkmb万亿]$") then
+  if string.match(s, "^%d+[%d%.]*%s*[KMBkmb]$") then
+    return true
+  end
+  if (string.find(s, "万", 1, true) or string.find(s, "亿", 1, true)) and string.match(s, "%d") then
     return true
   end
   return false
 end
 
 --- 格式化播放量为 YouTube 常见的 K / M / B 字符串 (如 "17M", "3.4M", "850K")
--- 若无法解析出有效数字，返回 nil
+-- 彻底规避在 Lua 模式串中使用任何非 ASCII 汉字（兼容 Dart lua_dardo_plus）
 function nav.format_play_count(str)
   if not str or type(str) ~= "string" or string.len(str) == 0 then return nil end
   local s = nav.trim_str(str)
@@ -205,40 +208,44 @@ function nav.format_play_count(str)
   end
 
   -- 2. 中文/日文万: 如 "播放次数：1743万", "335万"
-  local wan_str = string.match(s, "([%d%.]+)%s*万")
-  if wan_str then
-    local wan_num = tonumber(wan_str)
-    if wan_num then
-      local total = wan_num * 10000
-      if total >= 1000000000 then
-        local b = total / 1000000000
-        return string.format("%.1fB", b)
-      elseif total >= 10000000 then
-        local m = math.floor(total / 1000000 + 0.5)
-        return string.format("%dM", m)
-      elseif total >= 1000000 then
-        local m = total / 1000000
-        return string.format("%.1fM", m)
-      elseif total >= 1000 then
-        local k = math.floor(total / 1000 + 0.5)
-        return string.format("%dK", k)
-      else
-        return string.format("%d", math.floor(total))
+  if string.find(s, "万", 1, true) then
+    local digits = string.match(s, "([%d%.]+)")
+    if digits then
+      local wan_num = tonumber(digits)
+      if wan_num then
+        local total = wan_num * 10000
+        if total >= 1000000000 then
+          local b = total / 1000000000
+          return string.format("%.1fB", b)
+        elseif total >= 10000000 then
+          local m = math.floor(total / 1000000 + 0.5)
+          return string.format("%dM", m)
+        elseif total >= 1000000 then
+          local m = total / 1000000
+          return string.format("%.1fM", m)
+        elseif total >= 1000 then
+          local k = math.floor(total / 1000 + 0.5)
+          return string.format("%dK", k)
+        else
+          return string.format("%d", math.floor(total))
+        end
       end
     end
   end
 
-  -- 3. 中文亿: 如 "1.2亿"
-  local yi_str = string.match(s, "([%d%.]+)%s*亿")
-  if yi_str then
-    local yi_num = tonumber(yi_str)
-    if yi_num then
-      local total = yi_num * 100000000
-      if total >= 1000000000 then
-        return string.format("%.1fB", total / 1000000000)
-      else
-        local m = math.floor(total / 1000000 + 0.5)
-        return string.format("%dM", m)
+  -- 3. 中文亿: 如 "1.2亿", "1.6亿"
+  if string.find(s, "亿", 1, true) then
+    local digits = string.match(s, "([%d%.]+)")
+    if digits then
+      local yi_num = tonumber(digits)
+      if yi_num then
+        local total = yi_num * 100000000
+        if total >= 1000000000 then
+          return string.format("%.1fB", total / 1000000000)
+        else
+          local m = math.floor(total / 1000000 + 0.5)
+          return string.format("%dM", m)
+        end
       end
     end
   end
