@@ -123,10 +123,21 @@ function catalog_service.playlist(playlist_id)
   end
 
   transport.ensure_visitor_data()
-  local data = transport.post_music("browse", { browseId = b_id }, constants.CLIENT_WEB_REMIX)
+  local ok, data = pcall(transport.post_music, "browse", { browseId = b_id }, constants.CLIENT_WEB_REMIX)
+  if not ok or not data then
+    return {
+      id = pid,
+      name = "Playlist",
+      description = "",
+      coverUrl = "",
+      songCount = 0,
+      owner = "YouTube Music"
+    }
+  end
+
   local pl = browse_parser.parse_playlist_header(data, pid)
 
-  -- 关键优化（方案1）：若歌单无独立大图，自动继承首曲高清封面，详情页唱片质感立现
+  -- 若歌单无独立大图，自动继承首曲高清封面，详情页唱片质感立现
   if pl and (not pl.coverUrl or pl.coverUrl == "") then
     local songs = browse_parser.parse_playlist_songs(data)
     if songs and #songs > 0 and songs[1].coverUrl and string.len(songs[1].coverUrl) > 0 then
@@ -149,8 +160,8 @@ function catalog_service.playlist_songs(playlist_id, limit, offset)
   end
 
   transport.ensure_visitor_data()
-  local data = transport.post_music("browse", { browseId = b_id }, constants.CLIENT_WEB_REMIX)
-  if not data then return {} end
+  local ok, data = pcall(transport.post_music, "browse", { browseId = b_id }, constants.CLIENT_WEB_REMIX)
+  if not ok or not data then return {} end
 
   local songs = browse_parser.parse_playlist_songs(data)
   local take = tonumber(limit) or 50

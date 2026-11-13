@@ -15,28 +15,8 @@ function discover_service.home_feed()
   local data = transport.post_music("browse", payload, constants.CLIENT_WEB_REMIX)
   local feed = browse_parser.parse_home_feed(data)
 
-  -- 为缺乏独立封面的合集（如归档合集、重放合集等），继承该歌单首曲的高清官方封面
-  for i, pl in ipairs(feed.editorialPlaylists) do
-    if i <= 8 and (not pl.coverUrl or pl.coverUrl == "") then
-      local pl_data = transport.post_music("browse", {
-        browseId = pl.id
-      }, constants.CLIENT_WEB_REMIX)
-      if pl_data then
-        local pl_songs = browse_parser.parse_playlist_songs(pl_data)
-        if pl_songs and #pl_songs > 0 and pl_songs[1].coverUrl and string.len(pl_songs[1].coverUrl) > 0 then
-          pl.coverUrl = pl_songs[1].coverUrl
-          if #feed.quick == 0 then
-            for k = 1, math.min(#pl_songs, 25) do
-              table.insert(feed.quick, pl_songs[k])
-              table.insert(feed.daily, pl_songs[k])
-            end
-          end
-        end
-      end
-    end
-  end
-
-  -- 若首屏未直接给出单曲卡片且 quick 仍为空，取推荐第 1 歌单的曲目填充 quick 与 daily
+  -- 若首屏未直接给出单曲卡片，取推荐第 1 歌单的曲目填充 quick 与 daily (单次快速请求)
+  -- 这样 Lazer 顶部的“每日推荐”卡片将立刻激活高亮可点！
   if #feed.quick == 0 and #feed.recommended > 0 then
     local first_pl = feed.recommended[1]
     local pl_data = transport.post_music("browse", {
