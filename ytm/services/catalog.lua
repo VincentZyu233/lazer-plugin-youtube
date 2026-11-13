@@ -521,8 +521,8 @@ function catalog_service.playlists(args)
     catalog_service.favorites({ limit = 100, offset = 0 })
   end
 
-  local user = account.get_user()
-  local user_name = user and user.name or ""
+  local user_name = store.get("user_name") or ""
+  local user_id = store.get("user_id") or "YouTube Music"
   local total = (cached_favs and #cached_favs > 0 and #cached_favs) or cached_favs_total_count or 100
   local cover = (cached_favs and cached_favs[1] and cached_favs[1].coverUrl) or cached_favs_cover or "https://www.gstatic.com/youtube/media/ytm/images/pbg/liked-songs-delhi-576.png"
 
@@ -534,7 +534,7 @@ function catalog_service.playlists(args)
     songCount = total,
     writable = true,
     isFavorites = true,
-    owner = user and user.id or "YouTube Music"
+    owner = user_id
   }
 
   return { fav_pl }
