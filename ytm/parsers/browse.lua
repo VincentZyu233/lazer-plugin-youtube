@@ -25,7 +25,7 @@ function browse_parser.parse_song_details(res, vid)
     artists = {
       { id = channel_id, name = author, coverUrl = "" }
     },
-    albumName = "[Unknown Plays] " .. (string.len(title) > 0 and title or "Unknown Album"),
+    albumName = (string.len(title) > 0 and title or "Unknown Album"),
     coverUrl = cover_url,
     durationMs = dur_s * 1000
   }
@@ -103,7 +103,8 @@ function browse_parser.parse_continuation_songs(data, seen_songs)
     if it.continuationItemRenderer then
       next_token = nav.nav(it, { "continuationItemRenderer", "continuationEndpoint", "continuationCommand", "token" })
     else
-      local s = search_parser.parse_song_item(it, nil, seen_songs)
+      local raw_item = it.musicResponsiveListItemRenderer or it
+      local s = search_parser.parse_song_item(raw_item, nil, seen_songs)
       if s then
         s.starred = true
         table.insert(songs, s)
@@ -200,7 +201,7 @@ function browse_parser.parse_home_sections(sec_list, feed, seen_pl, seen_alb, se
                 id = vid,
                 title = title,
                 artists = { { id = "yt_artist_" .. vid, name = (sub ~= "" and sub or "YouTube Music"), coverUrl = "" } },
-                albumName = "[Unknown Plays] " .. (string.len(title) > 0 and title or "Unknown Album"),
+                albumName = (string.len(title) > 0 and title or "Unknown Album"),
                 coverUrl = thumb,
                 durationMs = 0
               }
@@ -494,7 +495,7 @@ function browse_parser.parse_artist_songs(data, artist_id)
                 id = vid,
                 title = t_title,
                 artists = { { id = tostring(artist_id or ""), name = "Artist", coverUrl = "" } },
-                albumName = "[Unknown Plays] " .. (string.len(title) > 0 and title or "Unknown Album"),
+                albumName = (string.len(title) > 0 and title or "Unknown Album"),
                 coverUrl = cover,
                 durationMs = 0
               })
