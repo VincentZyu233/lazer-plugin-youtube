@@ -512,8 +512,9 @@ function browse_parser.parse_playlist_header(data, playlist_id)
   local song_count = 0
   if hdr and hdr.secondSubtitle then
     local sec_sub = nav.extract_text(hdr.secondSubtitle)
-    local cnt_str = string.match(sec_sub, "(%d+)")
-    if cnt_str then song_count = tonumber(cnt_str) or 0 end
+    -- 宿主 string.match 不支持 Lua 的 (%d+) 捕获，改用纯字节扫描提取首个数字
+    local parsed = nav.extract_number(sec_sub)
+    if parsed then song_count = math.floor(parsed) end
   end
 
   local cover_url = ""
