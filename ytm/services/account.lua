@@ -135,14 +135,12 @@ function account.fetch_cookie_user_info(cookie_str)
     req_headers["Authorization"] = auth_header
   end
 
-  local ok, res = pcall(function()
-    return host.http({
-      url = constants.HOST_MUSIC .. "/youtubei/v1/account/account_menu",
-      method = "POST",
-      headers = req_headers,
-      body = host.json_encode(payload)
-    })
-  end)
+  local ok, res = pcall(host.http, {
+    url = constants.HOST_MUSIC .. "/youtubei/v1/account/account_menu",
+    method = "POST",
+    headers = req_headers,
+    body = host.json_encode(payload)
+  })
 
   if ok and res and res.status == 200 and res.body then
     local parse_ok, data = pcall(host.json_decode, res.body)
@@ -275,126 +273,90 @@ function account.qrCheck(args)
   end
 end
 
---- 使用 Cookie 进行登录验证并持久化 (支持直接传参校验，或输入 -1 / LOCAL 占位符直接读取本地 storage.json)
+--- 使用 Cookie 进行登录验证并持久化 (对齐 0.1.14 原生直调规范)
 function account.login_cookie(args)
-  local raw_cookie = tostring(args and args.cookie or "")
+  local cookie_str = tostring(args and args.cookie or "")
   -- 清理首尾空格与换行符
-  raw_cookie = raw_cookie:match("^%s*(.-)%s*$") or ""
-  local lower_cookie = string.lower(raw_cookie)
+  cookie_str = cookie_str:match("^%s*(.-)%s*$") or ""
+  local lower = string.lower(cookie_str)
 
-  -- 判断是否为读取本地存储的快捷标记 (-1, local, store, storage)
-  local is_local_magic = (lower_cookie == "-1" or lower_cookie == "local" or lower_cookie == "store" or lower_cookie == "storage")
-
-  -- 内部校验逻辑
-  local function verify_cookie(candidate_cookie)
-    if not candidate_cookie or string.len(candidate_cookie) == 0 then
-      return nil
-    end
-
-    local cookie_str = auth_cookie.clean_cookie(candidate_cookie)
-    if string.len(cookie_str) == 0 then
-      return nil
-    end
-
-    local payload = {
-      context = {
-        client = {
-          clientName = "WEB_REMIX",
-          clientVersion = "1.20261110.04.00",
-          hl = "zh-CN",
-          gl = "JP"
-        }
-      }
-    }
-
-    local auth_header = auth_cookie.generate_authorization(cookie_str, constants.HOST_MUSIC)
-    local req_headers = {
-      ["Content-Type"] = "application/json",
-      ["User-Agent"] = constants.CLIENT_WEB_REMIX.userAgent,
-      ["Origin"] = constants.HOST_MUSIC,
-      ["X-Origin"] = constants.HOST_MUSIC,
-      ["X-Goog-Api-Format-Version"] = "2",
-      ["Cookie"] = cookie_str
-    }
-    if auth_header then
-      req_headers["Authorization"] = auth_header
-    end
-
-    local ok, res = pcall(function()
-      return host.http({
-        url = constants.HOST_MUSIC .. "/youtubei/v1/account/account_menu",
-        method = "POST",
-        headers = req_headers,
-        body = host.json_encode(payload)
-      })
-    end)
-
-    if not ok or not res or res.status ~= 200 or not res.body then
-      return nil
-    end
-
-    local parse_ok, data = pcall(host.json_decode, res.body)
-    local info = parse_ok and extract_account_info(data)
-
-    if not info and not string.find(cookie_str, "LOGIN_INFO") then
-      return nil
-    end
-
-    local user_name = (info and info.name) or "YouTube User"
-    local user_avatar = (info and info.avatarUrl) or "https://www.youtube.com/s/desktop/9906d203/img/favicon_144x144.png"
-    local user_id = (info and info.handle) or "yt_authenticated"
-
-    store.set_cookie(cookie_str)
-    store.set("user_name", user_name)
-    store.set("user_avatar", user_avatar)
-    store.set("user_id", user_id)
-
-    return {
-      id = user_id,
-      name = user_name,
-      avatarUrl = user_avatar
-    }
-  end
-
-  -- 1. 如果匹配快捷标记或为空：直接读取本地 storage.json 凭据，跳过对快捷标记本身的无效网络请求
-  if is_local_magic or string.len(raw_cookie) == 0 then
+  -- 支持特殊占位符 (-1 / local / store)，若用户输入占位符则尝试从本地存储读取
+  local is_local_magic = (lower == "-1" or lower == "local" or lower == "store" or lower == "storage" or cookie_str == "")
+  if is_local_magic then
     local saved = store.get_cookie()
     if not saved or string.len(saved) == 0 then
       saved = store.get("backup_cookie")
     end
     if saved and string.len(saved) > 0 then
-      local clean_saved = saved:match("^%s*(.-)%s*$") or ""
-      local local_result = verify_cookie(clean_saved)
-      if local_result then
-        return local_result
-      end
-    end
-    -- 本地无有效凭据，返回 nil 让 Lazer 弹出提示
-    return nil
-  end
-
-  -- 2. 正常 Cookie 字符串输入：首先尝试当前 candidate
-  local result = verify_cookie(raw_cookie)
-  if result then
-    return result
-  end
-
-  -- 3. 如果当前 candidate 校验失败，且与本地 storage 的 Cookie 不同，尝试 fallback 到本地 storage
-  local saved_cookie = store.get_cookie()
-  if not saved_cookie or string.len(saved_cookie) == 0 then
-    saved_cookie = store.get("backup_cookie")
-  end
-  if saved_cookie and string.len(saved_cookie) > 0 then
-    local clean_saved = saved_cookie:match("^%s*(.-)%s*$") or ""
-    if clean_saved ~= raw_cookie then
-      local fallback_result = verify_cookie(clean_saved)
-      if fallback_result then
-        return fallback_result
-      end
+      cookie_str = saved
+    else
+      error("本地存储在 Lazer 运行期间未被重新加载。请直接按下 Ctrl+V 粘贴剪贴板中的完整 Cookie，或重启 Lazer 即可完成自动登录！", 0)
     end
   end
 
-  return nil
+  if string.len(cookie_str) == 0 then
+    error("Cookie 不能为空", 0)
+  end
+
+  local payload = {
+    context = {
+      client = {
+        clientName = "WEB_REMIX",
+        clientVersion = "1.20261110.04.00",
+        hl = "zh-CN",
+        gl = "JP"
+      }
+    }
+  }
+
+  local auth_header = auth_cookie.generate_authorization(cookie_str, constants.HOST_MUSIC)
+  local req_headers = {
+    ["Content-Type"] = "application/json",
+    ["User-Agent"] = constants.CLIENT_WEB_REMIX.userAgent,
+    ["Origin"] = constants.HOST_MUSIC,
+    ["X-Origin"] = constants.HOST_MUSIC,
+    ["X-Goog-Api-Format-Version"] = "2",
+    ["Cookie"] = cookie_str
+  }
+  if auth_header then
+    req_headers["Authorization"] = auth_header
+  end
+
+  local res = host.http({
+    url = constants.HOST_MUSIC .. "/youtubei/v1/account/account_menu",
+    method = "POST",
+    headers = req_headers,
+    body = host.json_encode(payload)
+  })
+
+  if not res or res.status ~= 200 then
+    error("网络连接失败，请检查代理是否正常开启 (HTTP " .. tostring(res and res.status or "nil") .. ")", 0)
+  end
+
+  local ok, data = pcall(host.json_decode, res.body)
+  local info = ok and extract_account_info(data)
+
+  if not info then
+    if not string.find(cookie_str, "LOGIN_INFO") then
+      error("登录失败：检测到 Cookie 中缺少 YouTube 核心会话 (LOGIN_INFO)。请重新运行 tools/get_cookie.js，确保浏览器完全跳转回 YouTube Music 页面后再抓取！", 0)
+    end
+  end
+
+  local user_name = (info and info.name) or "YouTube User"
+  local user_avatar = (info and info.avatarUrl) or "https://www.youtube.com/s/desktop/9906d203/img/favicon_144x144.png"
+  local user_id = (info and info.handle) or "yt_authenticated"
+
+  store.set_cookie(cookie_str)
+  store.set("backup_cookie", cookie_str)
+  store.set("user_name", user_name)
+  store.set("user_avatar", user_avatar)
+  store.set("user_id", user_id)
+
+  return {
+    id = user_id,
+    name = user_name,
+    avatarUrl = user_avatar
+  }
 end
 
 --- 退出登录
