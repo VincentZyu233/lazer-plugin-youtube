@@ -33,8 +33,8 @@ function plugin.call(operation, args)
           name = "YouTube Music",
           auth = { "qr", "cookie" },
           capabilities = CAPABILITIES,
-          loginHint = "使用手机相机扫码直接授权登录，或在下方输入 -1 / LOCAL 读取本地凭据（亦可粘贴完整 Cookie）",
-          cookieHint = "输入 -1 或 LOCAL 读取本地存储凭据，亦可直接粘贴完整 Cookie"
+          loginHint = "支持手机相机扫码直接授权登录，亦可直接粘贴完整 Cookie 登录",
+          cookieHint = "直接粘贴完整 Cookie，或输入 -1 / LOCAL 读取已保存凭据"
         }
       }
     }

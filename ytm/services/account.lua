@@ -109,7 +109,6 @@ end
 --- 使用 Cookie 获取当前账号个人信息 (Cookie 模式: account_menu 接口，对齐 0.1.x 原生直调规范)
 function account.fetch_cookie_user_info(cookie_str)
   if not cookie_str or string.len(cookie_str) == 0 then return nil end
-  local cleaned = auth_cookie.clean_cookie(cookie_str)
 
   local payload = {
     context = {
@@ -122,14 +121,14 @@ function account.fetch_cookie_user_info(cookie_str)
     }
   }
 
-  local auth_header = auth_cookie.generate_authorization(cleaned, constants.HOST_MUSIC)
+  local auth_header = auth_cookie.generate_authorization(cookie_str, constants.HOST_MUSIC)
   local req_headers = {
     ["Content-Type"] = "application/json",
     ["User-Agent"] = constants.CLIENT_WEB_REMIX.userAgent,
     ["Origin"] = constants.HOST_MUSIC,
     ["X-Origin"] = constants.HOST_MUSIC,
     ["X-Goog-Api-Format-Version"] = "2",
-    ["Cookie"] = cleaned
+    ["Cookie"] = cookie_str
   }
   if auth_header then
     req_headers["Authorization"] = auth_header

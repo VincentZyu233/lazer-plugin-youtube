@@ -16,6 +16,8 @@ const path = require('path');
 const os = require('os');
 const net = require('net');
 const http = require('http');
+const https = require('https');
+const crypto = require('crypto');
 const readline = require('readline');
 const { spawn, exec } = require('child_process');
 
@@ -176,48 +178,25 @@ function getFreePort() {
   });
 }
 
-// 跨平台复制字符串到系统剪贴板 (Windows: PowerShell/clip, macOS: pbcopy, Linux: wl-copy/xclip/xsel)
+// 跨平台复制字符串到系统剪贴板 (与 0.1.15 对齐：Windows 纯原生 clip.exe 标准字节流写入，0 截断 0 污染)
 function copyToClipboard(text) {
   return new Promise((resolve) => {
     const platform = os.platform();
     if (platform === 'win32') {
-      // Windows 优先使用原生 clip.exe (与 0.1.14 对齐：纯标准流字节写入，0 截断、0 挂起、0 编码污染)
-      const clip = spawn('clip');
-      let handled = false;
-      const fallbackPs = () => {
-        if (handled) return;
-        handled = true;
-        try {
-          const ps = spawn('powershell', ['-NoProfile', '-Command', '$input | Set-Clipboard']);
-          ps.on('error', () => resolve(false));
-          ps.stdin.write(text);
-          ps.stdin.end();
-          ps.on('close', (c) => resolve(c === 0));
-        } catch (_) {
-          resolve(false);
-        }
-      };
-
-      clip.on('error', fallbackPs);
-      clip.stdin.on('error', fallbackPs);
-      clip.stdin.write(text);
-      clip.stdin.end();
-      clip.on('close', (code) => {
-        if (code === 0) {
-          handled = true;
-          return resolve(true);
-        }
-        fallbackPs();
-      });
+      const proc = spawn('clip');
+      proc.on('error', () => resolve(false));
+      proc.stdin.write(text);
+      proc.stdin.end();
+      proc.on('close', (code) => resolve(code === 0));
       return;
     }
 
     if (platform === 'darwin') {
       const proc = spawn('pbcopy');
       proc.on('error', () => resolve(false));
-      proc.on('close', (code) => resolve(code === 0));
       proc.stdin.write(text);
       proc.stdin.end();
+      proc.on('close', (code) => resolve(code === 0));
       return;
     }
 
@@ -294,7 +273,8 @@ function resolveLazerStoragePath() {
 }
 
 // 自动向 Lazer 本地插件存储注入凭据，成功时返回文件的绝对物理路径，失败返回 null
-function autoInjectToLazerStorage(cookieStr) {
+// 自动向 Lazer 本地插件存储注入凭据，成功时返回文件的绝对物理路径，失败返回 null
+function autoInjectToLazerStorage(cookieStr, profile) {
   try {
     const storageFile = resolveLazerStoragePath();
     if (!storageFile) return null;
@@ -311,11 +291,19 @@ function autoInjectToLazerStorage(cookieStr) {
 
     data.user_cookie = cookieStr;
     data.backup_cookie = cookieStr; // 同时记录备用凭据，防止退出登录后无法以 -1 快速找回
-    if (!data.user_id || data.user_id === '') {
-      data.user_id = 'yt_authenticated';
-    }
-    if (!data.user_name || data.user_name === '') {
-      data.user_name = 'YouTube 用户';
+    if (profile && profile.name) {
+      data.user_name = profile.name;
+      data.user_id = profile.id || profile.handle || profile.name;
+      if (profile.avatarUrl) {
+        data.user_avatar = profile.avatarUrl;
+      }
+    } else {
+      if (!data.user_id || data.user_id === '') {
+        data.user_id = 'yt_authenticated';
+      }
+      if (!data.user_name || data.user_name === '') {
+        data.user_name = 'YouTube 用户';
+      }
     }
 
     fs.writeFileSync(storageFile, JSON.stringify(data, null, 2), 'utf8');
@@ -326,7 +314,7 @@ function autoInjectToLazerStorage(cookieStr) {
 }
 
 // 在脚本同级目录生成一份凭据备份文件 (cookie_backup.json) 供调研与离线备份
-function saveBackupCredentials(cookieStr) {
+function saveBackupCredentials(cookieStr, profile) {
   try {
     const backupFile = path.join(__dirname, 'cookie_backup.json');
     let data = {};
@@ -338,11 +326,19 @@ function saveBackupCredentials(cookieStr) {
     data.user_cookie = cookieStr;
     data.backup_cookie = cookieStr;
     data.backup_time = new Date().toISOString();
-    if (!data.user_id || data.user_id === '') {
-      data.user_id = 'yt_authenticated';
-    }
-    if (!data.user_name || data.user_name === '') {
-      data.user_name = 'YouTube 用户';
+    if (profile && profile.name) {
+      data.user_name = profile.name;
+      data.user_id = profile.id || profile.handle || profile.name;
+      if (profile.avatarUrl) {
+        data.user_avatar = profile.avatarUrl;
+      }
+    } else {
+      if (!data.user_id || data.user_id === '') {
+        data.user_id = 'yt_authenticated';
+      }
+      if (!data.user_name || data.user_name === '') {
+        data.user_name = 'YouTube 用户';
+      }
     }
 
     fs.writeFileSync(backupFile, JSON.stringify(data, null, 2), 'utf8');
@@ -522,6 +518,60 @@ function evaluateCookie(cookieStr) {
   return { hasLoginInfo, hasSapisid, hasSid, hasHsid, isComplete };
 }
 
+// 验证 Cookie 是否已被 Google 激活并直接提取账号昵称与头像
+function fetchAccountProfile(cookieStr) {
+  return new Promise((resolve) => {
+    try {
+      const m = cookieStr.match(/[;%s]?SAPISID=([^;%s\r\n]+)/) || cookieStr.match(/[;%s]?__Secure-3PAPISID=([^;%s\r\n]+)/);
+      if (!m) return resolve(null);
+      const sapisid = m[1];
+      const ts = Math.floor(Date.now() / 1000);
+      const hash = crypto.createHash('sha1').update(`${ts} ${sapisid} https://music.youtube.com`).digest('hex');
+      const auth = `SAPISIDHASH ${ts}_${hash}`;
+
+      const req = https.request('https://music.youtube.com/youtubei/v1/account/account_menu', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+          'Origin': 'https://music.youtube.com',
+          'X-Origin': 'https://music.youtube.com',
+          'X-Goog-Api-Format-Version': '2',
+          'Cookie': cookieStr,
+          'Authorization': auth
+        }
+      }, (res) => {
+        let buf = '';
+        res.on('data', c => buf += c);
+        res.on('end', () => {
+          if (res.statusCode !== 200) return resolve(null);
+          try {
+            const j = JSON.parse(buf);
+            const act = j.actions?.[0]?.openPopupAction?.popup?.multiPageMenuRenderer?.header?.activeAccountHeaderRenderer;
+            if (act) {
+              const name = act.accountName?.runs?.[0]?.text;
+              const handle = act.channelHandle?.runs?.[0]?.text;
+              const thumbs = act.accountPhoto?.thumbnails;
+              const avatar = thumbs?.[thumbs.length - 1]?.url;
+              return resolve({
+                name: name || 'YouTube 用户',
+                id: handle || name || 'yt_authenticated',
+                avatarUrl: avatar ? (avatar.startsWith('//') ? `https:${avatar}` : avatar) : ''
+              });
+            }
+          } catch (_) {}
+          resolve(null);
+        });
+      });
+      req.on('error', () => resolve(null));
+      req.write(JSON.stringify({ context: { client: { clientName: 'WEB_REMIX', clientVersion: '1.20261110.04.00' } } }));
+      req.end();
+    } catch (_) {
+      resolve(null);
+    }
+  });
+}
+
 async function main() {
   const options = parseArgs();
   if (options.help) {
@@ -561,84 +611,65 @@ async function main() {
     process.exit(1);
   });
 
-  // 等待 CDP 端口就绪
   console.log(`[*] 等待浏览器就绪...`);
-  let wsUrl = null;
-  const startTime = Date.now();
-
-  while (Date.now() - startTime < 15000) {
-    try {
-      const res = await new Promise((resolve, reject) => {
-        http.get(`http://127.0.0.1:${port}/json/version`, (r) => {
-          let buf = '';
-          r.on('data', chunk => buf += chunk);
-          r.on('end', () => resolve(JSON.parse(buf)));
-        }).on('error', reject);
-      });
-
-      if (res && res.webSocketDebuggerUrl) {
-        wsUrl = res.webSocketDebuggerUrl;
-        break;
-      }
-    } catch (_) {
-      await new Promise(r => setTimeout(r, 400));
-    }
-  }
-
-  if (!wsUrl) {
-    console.error(`[!] 无法连接到浏览器调试端口 (${port})，请重试。`);
-    try { browserProc.kill(); } catch (_) {}
-    process.exit(1);
-  }
-
-  console.log(`[+] 浏览器连接成功！`);
   console.log(`\n>>> 请在弹出的浏览器窗口中完成 Google / YouTube 账号登录 <<<`);
-  console.log(`    (工具正在后台持续监听 Cookie 凭据，登录成功将自动捕获)\n`);
-
-  const cdp = new CDPClient(wsUrl);
-  await cdp.connect();
+  console.log(`    (工具正在后台持续监听 Cookie 凭据，登录成功将自动捕获并校验)\n`);
 
   let capturedCookie = null;
+  let capturedProfile = null;
   const pollStart = Date.now();
   const pollTimeout = options.timeout * 1000;
 
   while (Date.now() - pollStart < pollTimeout) {
     try {
-      const res = await cdp.send('Storage.getCookies');
-      if (res && res.cookies) {
-        // 智能分类与去重：优先使用 .youtube.com / music.youtube.com 的会话凭据，覆盖全局 .google.com 同名键
-        const cookieMap = new Map();
-        // 1. 先置入 google.com 基础 Cookie
-        for (const c of res.cookies) {
-          if (c.domain.includes('google.com') && !c.domain.includes('youtube.com')) {
+      const targets = await new Promise((resolve, reject) => {
+        http.get(`http://127.0.0.1:${port}/json`, (r) => {
+          let buf = '';
+          r.on('data', chunk => buf += chunk);
+          r.on('end', () => {
+            try { resolve(JSON.parse(buf)); } catch (_) { resolve([]); }
+          });
+        }).on('error', reject);
+      });
+
+      const ytTarget = Array.isArray(targets) && targets.find(t => t.url && (t.url.includes('music.youtube.com') || t.url.includes('youtube.com')));
+
+      if (ytTarget && ytTarget.webSocketDebuggerUrl) {
+        let cookies = null;
+        try {
+          const cdp = new CDPClient(ytTarget.webSocketDebuggerUrl);
+          await cdp.connect();
+          const res = await cdp.send('Network.getAllCookies');
+          cdp.close();
+          if (res && res.cookies) cookies = res.cookies;
+        } catch (_) {}
+
+        if (cookies && cookies.length > 0) {
+          const cookieMap = new Map();
+          for (const c of cookies) {
             cookieMap.set(c.name, c.value);
           }
-        }
-        // 2. 再置入 youtube.com 专用 Cookie (高优先级覆盖)
-        for (const c of res.cookies) {
-          if (c.domain.includes('youtube.com')) {
-            cookieMap.set(c.name, c.value);
-          }
-        }
 
-        if (cookieMap.size > 0) {
-          const cookieStr = Array.from(cookieMap.entries())
-            .map(([k, v]) => `${k}=${v}`)
-            .join('; ');
-          const evalRes = evaluateCookie(cookieStr);
+          const hasAuth = (cookieMap.get('SAPISID') || cookieMap.get('__Secure-3PAPISID')) && cookieMap.get('LOGIN_INFO');
+          if (hasAuth) {
+            const cookieStr = Array.from(cookieMap.entries())
+              .map(([k, v]) => `${k}=${v}`)
+              .join('; ');
 
-          if (evalRes.isComplete) {
-            capturedCookie = cookieStr;
-            break;
+            // 向 Google InnerTube 发送 account_menu 校验并提取真实账号昵称与头像
+            const profile = await fetchAccountProfile(cookieStr);
+            if (profile && profile.name) {
+              capturedCookie = cookieStr;
+              capturedProfile = profile;
+              break;
+            }
           }
         }
       }
     } catch (_) {}
 
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 1500));
   }
-
-  cdp.close();
 
   if (!capturedCookie) {
     console.error(`\n[!] 等待登录超时 (${options.timeout}s)，未捕获到完整登录凭据。`);
@@ -647,7 +678,10 @@ async function main() {
   }
 
   console.log(`\n======================================================================`);
-  console.log(`[+] 恭喜！成功捕获 YouTube Music 核心鉴权 Cookie！`);
+  console.log(`[+] 恭喜！成功捕获并验证 YouTube Music 核心鉴权 Cookie！`);
+  if (capturedProfile && capturedProfile.name) {
+    console.log(`[+] 识别到账号: ${capturedProfile.name} (${capturedProfile.id || ''})`);
+  }
   console.log(`======================================================================\n`);
 
   console.log(capturedCookie);
@@ -655,17 +689,19 @@ async function main() {
 
   const copied = await copyToClipboard(capturedCookie);
   if (copied) {
-    console.log(`[+] 已自动完整复制到系统剪贴板！可以直接在 Lazer 插件设置中粘贴登录。\n`);
+    console.log(`[+] 已通过原生 clip 完整复制到系统剪贴板！可以直接在 Lazer 弹窗中按 Ctrl+V 粘贴登录。\n`);
   } else {
     console.log(`[*] 请手动复制上方整段 Cookie 字符串并在 Lazer 插件中粘贴登录。\n`);
   }
 
   if (!options.skipStorage) {
-    const injectedPath = autoInjectToLazerStorage(capturedCookie);
+    const injectedPath = autoInjectToLazerStorage(capturedCookie, capturedProfile);
     if (injectedPath) {
       console.log(`[✓] 成功将最新凭据自动注入 Lazer 本地插件存储！`);
       console.log(`    本地绝对路径: ${injectedPath}`);
-      console.log(`    使用指引: 在 Lazer 的 Cookie 输入框中输入 -1 或 LOCAL 点击【登录】，或直接重启 Lazer 即可直接完成登录！\n`);
+      console.log(`    使用推荐:`);
+      console.log(`      1. 推荐直接在 Lazer 登录弹窗中按 Ctrl+V 粘贴即可完成登录！`);
+      console.log(`      2. 若 Lazer 尚未启动，直接启动 Lazer 即可秒进已登录态！\n`);
     } else {
       console.log(`[*] 未能定位或写入 Lazer 本地存储路径，请手动粘贴 Cookie 登录。\n`);
     }
@@ -674,7 +710,7 @@ async function main() {
   }
 
   if (options.backup) {
-    const backupPath = saveBackupCredentials(capturedCookie);
+    const backupPath = saveBackupCredentials(capturedCookie, capturedProfile);
     if (backupPath) {
       console.log(`[✓] 成功在脚本同级目录生成凭据备份！`);
       console.log(`    备份绝对路径: ${backupPath}\n`);

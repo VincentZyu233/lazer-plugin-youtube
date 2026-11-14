@@ -84,11 +84,10 @@ function transport.request(url_or_endpoint, payload, client_profile, target_host
     local cookie = store.get_cookie()
 
     if cookie and string.len(cookie) > 0 then
-      -- Cookie 导入模式 (自动清洗去重 + SAPISIDHASH 签名)
-      local clean_c = auth_cookie.clean_cookie(cookie)
-      headers["Cookie"] = clean_c
+      -- Cookie 导入模式 (与 0.1.15 对齐：原汁原味注入原始 Cookie 标头，保证 Google 会话签名不被篡改)
+      headers["Cookie"] = cookie
       if not is_mobile then
-        local auth_header = auth_cookie.generate_authorization(clean_c, origin)
+        local auth_header = auth_cookie.generate_authorization(cookie, origin)
         if auth_header then
           headers["Authorization"] = auth_header
         end
