@@ -66,6 +66,7 @@ def main():
         ("Lua Unit Test: Pure Digit Extractor (test_digit_extractor.lua)", lambda: run_lua_test("test_digit_extractor.lua")),
         ("Lua Unit Test: Song Formatting & Unknown Plays (test_song_formatting.lua)", lambda: run_lua_test("test_song_formatting.lua")),
         ("Lua Unit Test: Continuation Unwrap (test_continuation_unwrap.lua)", lambda: run_lua_test("test_continuation_unwrap.lua")),
+        ("Lua Unit Test: Cookie Trim & SAPISID (test_cookie_trim.lua)", lambda: run_lua_test("test_cookie_trim.lua")),
     ]
 
     for name, fn in tests:

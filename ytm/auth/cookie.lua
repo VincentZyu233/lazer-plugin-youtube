@@ -84,6 +84,56 @@ function auth_cookie.sha1(msg)
   return string.format("%08x%08x%08x%08x%08x", h0, h1, h2, h3, h4)
 end
 
+--- 按字节边界裁剪首尾空白
+-- 宿主 lua_dardo_plus 的 string.match 直接调用 Dart RegExp，Lua 的 %s 字符类会
+-- 变成字面量，`^%s*(.-)%s*$` 永远匹配失败。因此这里只使用 string.byte/string.sub。
+function auth_cookie.trim(value)
+  if value == nil then return "" end
+  local str = tostring(value)
+  local first = 1
+  local last = string.len(str)
+  while first <= last and string.byte(str, first) <= 32 do first = first + 1 end
+  while last >= first and string.byte(str, last) <= 32 do last = last - 1 end
+  if last < first then return "" end
+  return string.sub(str, first, last)
+end
+
+--- 从 Cookie 串中按字段名取值的纯字节扫描实现
+-- 作为 host.cookie_field 缺失时的兜底，同样不依赖任何 Lua 模式字符类。
+local function cookie_field_fallback(cookie_str, name)
+  local needle = name .. "="
+  local total = string.len(cookie_str)
+  local search_from = 1
+  while true do
+    local start = string.find(cookie_str, needle, search_from, true)
+    if not start then return nil end
+
+    -- 前一个字符必须是字段分隔符，避免命中 `XXSAPISID=` 这类后缀
+    local boundary = true
+    if start > 1 then
+      local prev = string.byte(cookie_str, start - 1)
+      if prev ~= 59 and prev ~= 32 and prev ~= 9 and prev ~= 10 and prev ~= 13 then
+        boundary = false
+      end
+    end
+
+    if boundary then
+      local value_start = start + string.len(needle)
+      local index = value_start
+      while index <= total do
+        local b = string.byte(cookie_str, index)
+        if b == 59 or b == 32 or b == 9 or b == 10 or b == 13 then break end
+        index = index + 1
+      end
+      if index > value_start then
+        return string.sub(cookie_str, value_start, index - 1)
+      end
+    end
+
+    search_from = start + 1
+  end
+end
+
 --- 从 Cookie 字符串中提取 SAPISID 凭据 (对齐 0.1.15 规范: 原汁原味提取，绝不进行字符串拆解破坏签名)
 function auth_cookie.get_sapisid(cookie_str)
   if not cookie_str or type(cookie_str) ~= "string" or string.len(cookie_str) == 0 then
@@ -99,13 +149,13 @@ function auth_cookie.get_sapisid(cookie_str)
     if s and string.len(s) > 0 then return s end
   end
 
-  local val = cookie_str:match("[;%s]?SAPISID=([^;%s\r\n]+)")
+  local val = cookie_field_fallback(cookie_str, "SAPISID")
   if val and string.len(val) > 0 then return val end
 
-  val = cookie_str:match("[;%s]?__Secure%-3PAPISID=([^;%s\r\n]+)")
+  val = cookie_field_fallback(cookie_str, "__Secure-3PAPISID")
   if val and string.len(val) > 0 then return val end
 
-  val = cookie_str:match("[;%s]?__Secure%-1PAPISID=([^;%s\r\n]+)")
+  val = cookie_field_fallback(cookie_str, "__Secure-1PAPISID")
   if val and string.len(val) > 0 then return val end
 
   return nil

@@ -251,11 +251,11 @@ end
 --- 使用 Cookie 进行登录验证并持久化 (对齐 0.1.14 原生直调规范)
 function account.login_cookie(args)
   local cookie_str = tostring(args and args.cookie or "")
-  -- 清理首尾空格与换行符
-  cookie_str = cookie_str:match("^%s*(.-)%s*$") or ""
+  -- 清理首尾空格与换行符：必须使用字节裁剪，宿主不认 Lua 的 %s 模式
+  cookie_str = auth_cookie.trim(cookie_str)
   local lower = string.lower(cookie_str)
 
-  -- 支持特殊占位符 (-1 / local / store)，若用户输入占位符则尝试从本地存储读取
+  -- 支持特殊占位符 (-1 / local / store / storage)，空串走同一条路径
   local is_local_magic = (lower == "-1" or lower == "local" or lower == "store" or lower == "storage" or cookie_str == "")
   if is_local_magic then
     local saved = store.get_cookie()
@@ -263,7 +263,7 @@ function account.login_cookie(args)
       saved = store.get("backup_cookie")
     end
     if saved and string.len(saved) > 0 then
-      cookie_str = saved
+      cookie_str = auth_cookie.trim(saved)
     else
       error("本地存储在 Lazer 运行期间未被重新加载。请直接按下 Ctrl+V 粘贴剪贴板中的完整 Cookie，或重启 Lazer 即可完成自动登录！", 0)
     end
