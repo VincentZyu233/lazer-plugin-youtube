@@ -61,7 +61,7 @@ function collectFiles(dir, base = '') {
         collectFiles(fullPath, relPath);
       }
     } else {
-      if (entry.name === 'manifest.json' || entry.name === 'main.lua' || entry.name === 'README.md' || base.startsWith('ytm') || base.startsWith('assets')) {
+      if (entry.name === 'manifest.json' || entry.name === 'main.lua' || entry.name === 'README.md' || entry.name === 'LICENSE' || base.startsWith('ytm') || base.startsWith('assets')) {
         filesToPack.push({ fullPath, relPath });
       }
     }

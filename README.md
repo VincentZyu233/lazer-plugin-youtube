@@ -51,7 +51,7 @@
 
 ### 🛒 方法一：通过官方插件市场安装（推荐）
 
-YouTube Music 插件已正式收录于 Lazer 官方插件市场（审核收录中）：
+YouTube Music 插件现已正式收录于 Lazer 官方插件市场：
 1. 打开 **Lazer** 播放器，进入 **设置 -> 插件管理 -> 插件市场**。
 2. 在市场中找到或搜索 **“YouTube Music”** (`lazer.youtube`)。
 3. 点击 **安装** 即可完成自动下载与激活，支持后续版本无感自动热更新！
@@ -80,11 +80,11 @@ node tools/build.js
 ## 💖 鸣谢与致敬
 
 - [chuxuehaocai/Lazer](https://github.com/chuxuehaocai/Lazer) - 优雅而纯粹的手工打造跨平台音乐播放器。
-- [sigma67/ytmusicapi](https://github.com/sigma67/ytmusicapi) - 优秀的 YouTube Music Python API 库，为本项目的时间戳歌词逆向、安全深度寻址工具与架构分层设计提供了核心灵感。
-- [yt-dlp/yt-dlp](https://github.com/yt-dlp/yt-dlp) - 业界领先的音视频提取框架与逆向工程参考。
+- [sigma67/ytmusicapi](https://github.com/sigma67/ytmusicapi) - 优秀的 YouTube Music Python API 库（MIT），为本项目的时间戳歌词逆向、安全深度寻址工具与架构分层设计提供了核心灵感。
+- [yt-dlp/yt-dlp](https://github.com/yt-dlp/yt-dlp) - 业界领先的音视频提取框架与逆向工程参考（Unlicense）。
 
 ---
 
 ## 📄 许可证
 
-本项目遵循 MIT 协议开源。仅供技术学习与交流使用，音视频版权归 YouTube、Google LLC 及相关版权方所有。
+本项目遵循 [MIT](./LICENSE) 协议开源。仅供技术学习与交流使用，音视频版权归 YouTube、Google LLC 及相关版权方所有。
