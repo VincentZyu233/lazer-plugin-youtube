@@ -21,3 +21,10 @@ AGENTS.local.md
 *.local.md
 .DS_Store
 Thumbs.db
+
+# Credentials & local backups
+cookie_backup.json
+*backup*.json
+*.backup.json
+tools/*backup*.json
+storage.json

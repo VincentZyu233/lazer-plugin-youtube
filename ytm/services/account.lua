@@ -359,6 +359,9 @@ function account.login_cookie(args)
   -- 1. 如果匹配快捷标记或为空：直接读取本地 storage.json 凭据，跳过对快捷标记本身的无效网络请求
   if is_local_magic or string.len(raw_cookie) == 0 then
     local saved = store.get_cookie()
+    if not saved or string.len(saved) == 0 then
+      saved = store.get("backup_cookie")
+    end
     if saved and string.len(saved) > 0 then
       local clean_saved = saved:match("^%s*(.-)%s*$") or ""
       local local_result = verify_cookie(clean_saved)
@@ -378,6 +381,9 @@ function account.login_cookie(args)
 
   -- 3. 如果当前 candidate 校验失败，且与本地 storage 的 Cookie 不同，尝试 fallback 到本地 storage
   local saved_cookie = store.get_cookie()
+  if not saved_cookie or string.len(saved_cookie) == 0 then
+    saved_cookie = store.get("backup_cookie")
+  end
   if saved_cookie and string.len(saved_cookie) > 0 then
     local clean_saved = saved_cookie:match("^%s*(.-)%s*$") or ""
     if clean_saved ~= raw_cookie then
@@ -393,6 +399,10 @@ end
 
 --- 退出登录
 function account.logout()
+  local last_cookie = store.get_cookie()
+  if last_cookie and string.len(last_cookie) > 0 then
+    store.set("backup_cookie", last_cookie)
+  end
   store.set_cookie("")
   store.set_access_token("")
   store.set_refresh_token("")

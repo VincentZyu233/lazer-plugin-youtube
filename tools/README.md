@@ -42,3 +42,11 @@ node tools/get_cookie.js -q
 # 或
 node tools/get_cookie.js --quit
 ```
+
+### 4. 生成脚本同级目录本地凭据备份 (用于离线调研与数据分析)
+```bash
+node tools/get_cookie.js -b
+# 或
+node tools/get_cookie.js --backup
+```
+在 `tools/` 脚本同级目录下生成 `cookie_backup.json`，方便离线研究或多环境备份（已配置 `.gitignore` 防止意外提交凭据）。

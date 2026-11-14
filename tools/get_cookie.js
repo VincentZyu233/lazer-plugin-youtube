@@ -29,6 +29,7 @@ function parseArgs() {
   const options = {
     quitAfterDone: false, // 是否在抓取成功后自动关闭浏览器
     skipStorage: false,   // 是否跳过向 Lazer 本地插件 storage 写入
+    backup: false,        // 是否在脚本同级目录生成 cookie_backup.json 备份
     browserPath: null,
     port: 0,
     url: 'https://music.youtube.com',
@@ -42,6 +43,8 @@ function parseArgs() {
       options.quitAfterDone = true;
     } else if (arg === '-s' || arg === '--skip-storage') {
       options.skipStorage = true;
+    } else if (arg === '-b' || arg === '--backup') {
+      options.backup = true;
     } else if (arg === '-p' || arg === '--browser-path') {
       options.browserPath = args[++i];
     } else if (arg === '--port') {
@@ -66,6 +69,7 @@ function showHelp() {
   node tools/get_cookie.js [参数]
 
 参数选项:
+  -b, --backup        在脚本同级目录生成 cookie_backup.json 凭据备份文件 (用于离线调研与恢复)
   -s, --skip-storage  跳过自动写入 Lazer 插件本地存储 (默认自动写入免贴登录)
   -q, --quit          抓取 Cookie 成功后自动关闭浏览器窗口 (默认保持打开)
   -p, --browser-path  指定浏览器可执行文件路径 (默认自动探测 Chrome / Edge)
@@ -294,6 +298,7 @@ function autoInjectToLazerStorage(cookieStr) {
     }
 
     data.user_cookie = cookieStr;
+    data.backup_cookie = cookieStr; // 同时记录备用凭据，防止退出登录后无法以 -1 快速找回
     if (!data.user_name || data.user_name === '') {
       data.user_name = 'YouTube 用户';
     }
@@ -301,6 +306,31 @@ function autoInjectToLazerStorage(cookieStr) {
     fs.writeFileSync(storageFile, JSON.stringify(data, null, 2), 'utf8');
     return storageFile;
   } catch (_) {
+    return null;
+  }
+}
+
+// 在脚本同级目录生成一份凭据备份文件 (cookie_backup.json) 供调研与离线备份
+function saveBackupCredentials(cookieStr) {
+  try {
+    const backupFile = path.join(__dirname, 'cookie_backup.json');
+    let data = {};
+    const storageFile = resolveLazerStoragePath();
+    if (storageFile && fs.existsSync(storageFile)) {
+      try { data = JSON.parse(fs.readFileSync(storageFile, 'utf8')); } catch (_) {}
+    }
+
+    data.user_cookie = cookieStr;
+    data.backup_cookie = cookieStr;
+    data.backup_time = new Date().toISOString();
+    if (!data.user_name || data.user_name === '') {
+      data.user_name = 'YouTube 用户';
+    }
+
+    fs.writeFileSync(backupFile, JSON.stringify(data, null, 2), 'utf8');
+    return backupFile;
+  } catch (err) {
+    console.error(`[!] 写入备份文件失败: ${err.message}`);
     return null;
   }
 }
@@ -625,6 +655,14 @@ async function main() {
     console.log(`[*] 已指定 -s / --skip-storage 参数，跳过自动写入本地存储。\n`);
   }
 
+  if (options.backup) {
+    const backupPath = saveBackupCredentials(capturedCookie);
+    if (backupPath) {
+      console.log(`[✓] 成功在脚本同级目录生成凭据备份！`);
+      console.log(`    备份绝对路径: ${backupPath}\n`);
+    }
+  }
+
   if (options.quitAfterDone) {
     console.log(`[*] 已设置自动退出，正在关闭浏览器窗口...`);
     try { browserProc.kill(); } catch (_) {}
@@ -645,5 +683,6 @@ module.exports = {
   detectBrowser,
   resolveLazerStoragePath,
   autoInjectToLazerStorage,
+  saveBackupCredentials,
   evaluateCookie
 };
