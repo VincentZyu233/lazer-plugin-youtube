@@ -69,6 +69,10 @@ function collectFiles(dir, base = '') {
 }
 
 collectFiles(ROOT_DIR);
+// 打包前按相对路径做稳定排序：fs.readdirSync 的顺序依赖底层文件系统，
+// Windows(NTFS) 与 Linux(ext4) 返回顺序不同会让同一份源码产出不同的 ZIP 与
+// SHA-256。这里用 UTF-16 码元比较而不用 localeCompare，避免受系统语言环境影响。
+filesToPack.sort((a, b) => (a.relPath < b.relPath ? -1 : a.relPath > b.relPath ? 1 : 0));
 log(`共收集到 ${filesToPack.length} 个待打包文件:`);
 filesToPack.forEach(f => console.log(`  - ${f.relPath}`));
 
