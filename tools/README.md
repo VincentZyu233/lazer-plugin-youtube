@@ -1,6 +1,6 @@
-# Lazer YouTube Music 登录与凭据获取工具 (v2.0)
+# Lazer YouTube Music 凭据获取工具 (v0.2.1)
 
-本目录提供了全自动的 YouTube Music 登录凭据获取工具以及插件的一键校验构建脚本，支持 **4 种灵活的登录模式**，满足从普通听歌用户到极客开发者的不同需求。
+本目录提供了全自动的 YouTube Music 登录凭据获取工具以及插件的一键校验构建脚本，全面原生支持 **Windows**、**macOS** 与 **Linux** 三大操作系统。
 
 ---
 
@@ -9,62 +9,33 @@
 ```text
 tools/
 ├── build.js         # 插件生产环境打包构建脚本 (校验 manifest.json、计算 SHA-256、压缩 dist/lazer.youtube.zip)
-├── get_cookie.js    # YouTube / YouTube Music 交互式与命令行全自动凭据提取工具 (支持 4 种登录模式)
-├── mini_qr.js       # 纯原生无依赖终端字符画二维码 & 极简高清矢量二维码轻量生成引擎
+├── get_cookie.js    # YouTube / YouTube Music 交互式浏览器 Cookie 跨平台自动抓取与持久化注入工具
 └── README.md        # 工具链详细使用说明与参数文档
 ```
 
 ---
 
-## 🌟 四大登录模式
-
-| 模式 | 命令行参数 | 特点与适用场景 | 浏览器行为 | 产出凭据 |
-| :--- | :--- | :--- | :--- | :--- |
-| **[1] 浏览器常驻模式** (默认) | `-b` 或 `--browser` | 拉起独立浏览器登录，支持账号密码或扫码，抓取后保留窗口供边听歌边与 Lazer 对照 | 保持开启 | 完整 Cookie (写入剪贴板) |
-| **[2] 快速提取模式** | `-q` 或 `--quit` | 拉起独立浏览器登录，自动抓取 Cookie 并立即复制进剪贴板，自动关闭浏览器 | 提取后自动关闭 | 完整 Cookie (写入剪贴板) |
-| **[3] 控制台扫码模式** | `--qr-console` 或 `--qr` | 纯命令行操作，在终端控制台直接渲染字符画二维码，手机扫码免弹窗 | 不拉起浏览器 | Google OAuth 凭据 |
-| **[4] 网页扫码即退模式** | `--qr-web` | 拉起极简无边框小窗口居中展示高清矢量二维码，手机相机秒识别，确认后窗口秒关 | 确认后自动关闭 | Google OAuth 凭据 |
-
----
-
-## 🚀 使用方法
+## 🌟 使用方法
 
 要求：Node.js >= 18.0（纯原生标准库，**0 第三方 npm 依赖**）
 
-### 1. 交互式菜单（推荐新手使用）
-直接运行脚本，终端将弹出清晰易选的交互菜单：
+### 1. 抓取 Cookie 并自动注入 Lazer 本地存储（默认推荐）
 ```bash
 node tools/get_cookie.js
 ```
-输入 `1`、`2`、`3`、`4` 或直接回车选择默认模式即可。
+脚本会自动探测系统中的 Chrome / Edge / Brave / Chromium 浏览器并拉起独立窗口引导登录。登录成功后：
+- **跨平台自动注入**：自动识别 Windows (`%APPDATA%`)、macOS (`~/Library/Application Support/dev.naominet.lazer`) 和 Linux (`~/.local/share/dev.naominet.lazer`) 的数据存储位置，直接写入 `storage.json` 并输出文件的**本地物理绝对路径**。在 Lazer 中直接点击【登录】（即使输入框留空）或重启/刷新 Lazer 即可瞬间完成登录。
+- **自动复制剪贴板**：跨平台适配 PowerShell/clip (Win)、`pbcopy` (Mac)、`wl-copy`/`xclip`/`xsel` (Linux)，完整复制到系统剪贴板备用。
+- **窗口保持开启**：默认保留浏览器窗口可继续播放试听。
 
-### 2. 命令行参数秒开（推荐快捷方式与脚本调用）
+### 2. 仅抓取并复制到剪贴板，跳过写入 Lazer 本地存储
 ```bash
-# 模式 1：抓取后保持浏览器开启听歌
-node tools/get_cookie.js -b
-
-# 模式 2：秒提 Cookie 后自动关窗
-node tools/get_cookie.js -q
-
-# 模式 3：终端字符画扫码
-node tools/get_cookie.js --qr-console
-
-# 模式 4：独立小窗高清二维码扫码（手机扫完小窗自动消失）
-node tools/get_cookie.js --qr-web
+node tools/get_cookie.js -s
+# 或
+node tools/get_cookie.js --skip-storage
 ```
 
----
-
-## ⚙️ 进阶参数
-
-| 参数 | 缩写 | 说明 | 默认值 |
-| :--- | :--- | :--- | :--- |
-| `--browser-path` | `-p` | 手动指定 Chrome/Edge 浏览器绝对路径 | 自动从系统中探测 |
-| `--timeout` | | 登录等待超时时间 (单位：秒) | `300` (5 分钟) |
-| `--help` | `-h` | 查看帮助提示 | |
-
----
-
-## 📋 下一步
-凭据抓取成功后，内容已自动复制进您的系统剪贴板。
-打开 **Lazer 客户端** -> 点击左侧「登录」-> 选择「YouTube Music」-> 粘贴内容后点击登录即可！
+### 3. 抓取 Cookie 成功后自动关闭浏览器
+```bash
+node tools/get_cookie.js -q
+```

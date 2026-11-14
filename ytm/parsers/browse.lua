@@ -31,12 +31,131 @@ function browse_parser.parse_song_details(res, vid)
   }
 end
 
+--- 解析 TV 客户端专属卡片 (tileRenderer)
+local function parse_tv_tile(tile, seen_songs)
+  if not tile or type(tile) ~= "table" then return nil end
+  local vid = tile.contentId
+  if not vid or string.len(vid) ~= 11 then return nil end
+  if seen_songs and seen_songs[vid] then return nil end
+
+  local meta = nav.nav(tile, { "metadata", "tileMetadataRenderer" }) or {}
+  local title = nav.extract_text(meta.title) or "Unknown Track"
+  title = nav.trim_str(title)
+  if string.len(title) == 0 then title = "Unknown Track" end
+
+  -- 提取歌手名 (lines[1].lineRenderer.items[1].lineItemRenderer.text)
+  local author = "Unknown Artist"
+  local lines = meta.lines
+  if lines and type(lines) == "table" and #lines > 0 then
+    local items = nav.nav(lines[1], { "lineRenderer", "items" })
+    if items and #items > 0 then
+      local t = nav.extract_text(items[1].lineItemRenderer and items[1].lineItemRenderer.text)
+      if t and string.len(t) > 0 then author = t end
+    end
+  end
+
+  -- 时长提取 (thumbnailOverlays)
+  local dur_ms = 0
+  local overlays = nav.nav(tile, { "header", "tileHeaderRenderer", "thumbnailOverlays" })
+  if overlays and type(overlays) == "table" then
+    for _, ov in ipairs(overlays) do
+      local time_rend = ov.thumbnailOverlayTimeStatusRenderer
+      if time_rend and time_rend.text then
+        local t_str = nav.extract_text(time_rend.text)
+        local ms = nav.parse_time_to_ms(t_str)
+        if ms > 0 then
+          dur_ms = ms
+          break
+        end
+      end
+    end
+  end
+
+  -- 封面图提取 (header.tileHeaderRenderer.thumbnail.thumbnails)
+  local cover_url = ""
+  local thumbs = nav.nav(tile, { "header", "tileHeaderRenderer", "thumbnail", "thumbnails" })
+  if thumbs and type(thumbs) == "table" and #thumbs > 0 then
+    cover_url = nav.extract_thumbnail(thumbs)
+  end
+  if string.len(cover_url) == 0 then
+    cover_url = "https://i.ytimg.com/vi/" .. vid .. "/hqdefault.jpg"
+  end
+
+  if seen_songs then seen_songs[vid] = true end
+
+  return {
+    id = vid,
+    title = title,
+    artists = {
+      { id = "yt_artist_" .. vid, name = author, coverUrl = "" }
+    },
+    albumName = title,
+    coverUrl = cover_url,
+    durationMs = dur_ms,
+    starred = true
+  }
+end
+
 --- 解析喜欢/收藏列表 (VLLM)
 function browse_parser.parse_favorites(data)
   if not data or type(data) ~= "table" then
     return {}, nil, 0
   end
 
+  -- 1. 优先检查是否为 TV 客户端响应 (tvBrowseRenderer)
+  local tv_renderer = nav.nav(data, { "contents", "tvBrowseRenderer" })
+  if tv_renderer then
+    local songs = {}
+    local seen_songs = {}
+    local token = nil
+
+    local pl_list = nav.nav(tv_renderer, {
+      "content", "tvSurfaceContentRenderer", "content", "twoColumnRenderer",
+      "rightColumn", "playlistVideoListRenderer"
+    }) or nav.nav(tv_renderer, {
+      "content", "twoColumnRenderer", "rightColumn", "playlistVideoListRenderer"
+    }) or nav.nav(tv_renderer, {
+      "twoColumnRenderer", "rightColumn", "playlistVideoListRenderer"
+    })
+
+    if not pl_list then
+      local function find_pvlr(node)
+        if type(node) ~= "table" then return nil end
+        if node.playlistVideoListRenderer then return node.playlistVideoListRenderer end
+        for _, v in pairs(node) do
+          local found = find_pvlr(v)
+          if found then return found end
+        end
+        return nil
+      end
+      pl_list = find_pvlr(tv_renderer)
+    end
+
+    if pl_list then
+      local contents = pl_list.contents or {}
+      for _, it in ipairs(contents) do
+        local tile = it.tileRenderer or it
+        local s = parse_tv_tile(tile, seen_songs)
+        if s then
+          table.insert(songs, s)
+        end
+      end
+
+      if pl_list.continuations then
+        for _, c in ipairs(pl_list.continuations) do
+          local next_c = c.nextContinuationData or c.reloadContinuationData
+          if next_c and next_c.continuation then
+            token = next_c.continuation
+            break
+          end
+        end
+      end
+    end
+
+    return songs, token, #songs
+  end
+
+  -- 2. Web Remix 客户端响应处理
   -- 提取真实总曲目数 (如 "213 首歌曲" -> 213)
   local total_count = 0
   local hdr_text = nav.nav(data, {
@@ -91,6 +210,36 @@ function browse_parser.parse_continuation_songs(data, seen_songs)
     return {}, nil
   end
 
+  -- 1. 检查 TV continuation 响应 (playlistVideoListContinuation)
+  local tv_cont = nav.nav(data, { "continuationContents", "playlistVideoListContinuation" })
+  if tv_cont then
+    local songs = {}
+    local next_token = nil
+    seen_songs = seen_songs or {}
+
+    local contents = tv_cont.contents or {}
+    for _, it in ipairs(contents) do
+      local tile = it.tileRenderer or it
+      local s = parse_tv_tile(tile, seen_songs)
+      if s then
+        table.insert(songs, s)
+      end
+    end
+
+    if tv_cont.continuations then
+      for _, c in ipairs(tv_cont.continuations) do
+        local next_c = c.nextContinuationData or c.reloadContinuationData
+        if next_c and next_c.continuation then
+          next_token = next_c.continuation
+          break
+        end
+      end
+    end
+
+    return songs, next_token
+  end
+
+  -- 2. Web Remix continuation 响应
   local items = nav.nav(data, { "onResponseReceivedActions", 1, "appendContinuationItemsAction", "continuationItems" })
              or nav.nav(data, { "continuationContents", "musicPlaylistShelfContinuation", "contents" })
              or {}

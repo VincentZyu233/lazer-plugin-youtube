@@ -84,28 +84,67 @@ function auth_cookie.sha1(msg)
   return string.format("%08x%08x%08x%08x%08x", h0, h1, h2, h3, h4)
 end
 
+--- 智能清洗并去重 Cookie 字符串 (重复键保留最新值，过滤空段与空格)
+function auth_cookie.clean_cookie(cookie_str)
+  if not cookie_str or type(cookie_str) ~= "string" or string.len(cookie_str) == 0 then
+    return ""
+  end
+
+  local keys = {}
+  local map = {}
+
+  for part in string.gmatch(cookie_str, "[^;]+") do
+    part = string.gsub(part, "^%s+", "")
+    part = string.gsub(part, "%s+$", "")
+    if string.len(part) > 0 then
+      local eq_pos = string.find(part, "=", 1, true)
+      if eq_pos and eq_pos > 1 then
+        local k = string.sub(part, 1, eq_pos - 1)
+        local v = string.sub(part, eq_pos + 1)
+        k = string.gsub(k, "^%s+", "")
+        k = string.gsub(k, "%s+$", "")
+        v = string.gsub(v, "^%s+", "")
+        v = string.gsub(v, "%s+$", "")
+        if not map[k] then
+          table.insert(keys, k)
+        end
+        map[k] = v
+      end
+    end
+  end
+
+  local res = {}
+  for _, k in ipairs(keys) do
+    table.insert(res, k .. "=" .. map[k])
+  end
+
+  return table.concat(res, "; ")
+end
+
 --- 从 Cookie 字符串中提取 SAPISID 凭据
 function auth_cookie.get_sapisid(cookie_str)
   if not cookie_str or type(cookie_str) ~= "string" or string.len(cookie_str) == 0 then
     return nil
   end
 
+  local cleaned = auth_cookie.clean_cookie(cookie_str)
+
   if host and type(host.cookie_field) == "function" then
-    local s = host.cookie_field(cookie_str, "SAPISID")
+    local s = host.cookie_field(cleaned, "SAPISID")
     if s and string.len(s) > 0 then return s end
-    s = host.cookie_field(cookie_str, "__Secure-3PAPISID")
+    s = host.cookie_field(cleaned, "__Secure-3PAPISID")
     if s and string.len(s) > 0 then return s end
-    s = host.cookie_field(cookie_str, "__Secure-1PAPISID")
+    s = host.cookie_field(cleaned, "__Secure-1PAPISID")
     if s and string.len(s) > 0 then return s end
   end
 
-  local val = cookie_str:match("[;%s]?SAPISID=([^;%s\r\n]+)")
+  local val = cleaned:match("[;%s]?SAPISID=([^;%s\r\n]+)")
   if val and string.len(val) > 0 then return val end
 
-  val = cookie_str:match("[;%s]?__Secure%-3PAPISID=([^;%s\r\n]+)")
+  val = cleaned:match("[;%s]?__Secure%-3PAPISID=([^;%s\r\n]+)")
   if val and string.len(val) > 0 then return val end
 
-  val = cookie_str:match("[;%s]?__Secure%-1PAPISID=([^;%s\r\n]+)")
+  val = cleaned:match("[;%s]?__Secure%-1PAPISID=([^;%s\r\n]+)")
   if val and string.len(val) > 0 then return val end
 
   return nil

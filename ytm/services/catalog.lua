@@ -365,14 +365,26 @@ function catalog_service.favorites(args)
   local is_burst = cached_favs and #cached_favs > 0 and (now - cached_favs_time <= 3000)
 
   if (not is_burst and offset == 0) or not cached_favs or #cached_favs == 0 then
+    local cookie = store.get_cookie()
+    local access_token = store.get_access_token()
+    local is_pure_oauth = (not cookie or string.len(cookie) == 0) and (access_token and string.len(access_token) > 0)
+
     local payload = {
       browseId = "VLLM"
     }
-    local ok, data = pcall(transport.post_music, "browse", payload, constants.CLIENT_WEB_REMIX)
-    if not ok or not data then
-      -- 失败时立即重试 1 次防抖
+
+    local ok, data = false, nil
+    if is_pure_oauth then
+      -- OAuth 扫码模式: 直接走 TV 端点，规避 Google 对 Web Remix + OAuth Bearer 报 400 限制
+      ok, data = pcall(transport.post_youtube, "browse?alt=json", payload, constants.CLIENT_TVHTML5)
+    else
+      -- Cookie 导入模式: 优先 Web 端点，失败则降级到 TV 端点
       ok, data = pcall(transport.post_music, "browse", payload, constants.CLIENT_WEB_REMIX)
+      if not ok or not data then
+        ok, data = pcall(transport.post_youtube, "browse?alt=json", payload, constants.CLIENT_TVHTML5)
+      end
     end
+
     if ok and data then
       local songs, next_token, total_count = browse_parser.parse_favorites(data)
       if songs and #songs > 0 then
@@ -392,7 +404,15 @@ function catalog_service.favorites(args)
         while cur_token and string.len(cur_token) > 0 and pages_walked < 10 do
           pages_walked = pages_walked + 1
           local c_payload = { continuation = cur_token }
-          local c_ok, c_data = pcall(transport.post_music, "browse", c_payload, constants.CLIENT_WEB_REMIX)
+          local c_ok, c_data = false, nil
+          if is_pure_oauth then
+            c_ok, c_data = pcall(transport.post_youtube, "browse?alt=json", c_payload, constants.CLIENT_TVHTML5)
+          else
+            c_ok, c_data = pcall(transport.post_music, "browse", c_payload, constants.CLIENT_WEB_REMIX)
+            if not c_ok or not c_data then
+              c_ok, c_data = pcall(transport.post_youtube, "browse?alt=json", c_payload, constants.CLIENT_TVHTML5)
+            end
+          end
           if c_ok and c_data then
             local more_songs, new_token = browse_parser.parse_continuation_songs(c_data, seen)
             if more_songs and #more_songs > 0 then
@@ -416,8 +436,20 @@ function catalog_service.favorites(args)
 
   -- 若请求的 offset 达到了当前缓存末尾，且存在后续 continuation 令牌，执行增量续拉
   if offset >= #cached_favs and cached_favs_token then
+    local cookie = store.get_cookie()
+    local access_token = store.get_access_token()
+    local is_pure_oauth = (not cookie or string.len(cookie) == 0) and (access_token and string.len(access_token) > 0)
+
     local c_payload = { continuation = cached_favs_token }
-    local c_ok, c_data = pcall(transport.post_music, "browse", c_payload, constants.CLIENT_WEB_REMIX)
+    local c_ok, c_data = false, nil
+    if is_pure_oauth then
+      c_ok, c_data = pcall(transport.post_youtube, "browse?alt=json", c_payload, constants.CLIENT_TVHTML5)
+    else
+      c_ok, c_data = pcall(transport.post_music, "browse", c_payload, constants.CLIENT_WEB_REMIX)
+      if not c_ok or not c_data then
+        c_ok, c_data = pcall(transport.post_youtube, "browse?alt=json", c_payload, constants.CLIENT_TVHTML5)
+      end
+    end
     if c_ok and c_data then
       local seen = {}
       for _, s in ipairs(cached_favs) do seen[s.id] = true end

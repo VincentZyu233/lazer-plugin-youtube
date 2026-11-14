@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import subprocess
 from test_search import test_search
 from test_stream import test_stream
 from test_song import test_song
@@ -16,6 +17,19 @@ from test_playlist import test_playlist
 from test_charts import test_charts
 from test_chart_match import test_chart_match
 from test_artist_and_mixart import test_artist_description_and_songs, test_home_feed_mixart_persistence
+
+def run_lua_test(test_file: str):
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    test_path = os.path.join(repo_root, "test", test_file)
+    cmd = [
+        "lua",
+        "-e", f"package.path = '{repo_root.replace(os.sep, '/')}/?.lua;' .. package.path",
+        test_path
+    ]
+    res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+    if res.returncode != 0:
+        raise RuntimeError(f"Lua test {test_file} failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}")
+    print(res.stdout.strip())
 
 def get_plugin_version() -> str:
     manifest_path = os.path.join(os.path.dirname(__file__), "..", "manifest.json")
@@ -49,6 +63,9 @@ def main():
         ("Chart Match & Title Cleaning Simulation (Biliboard)", test_chart_match),
         ("Artist Description & Top Songs (Jay Chou)", test_artist_description_and_songs),
         ("Home Feed Mixart Fallback & Persistence", test_home_feed_mixart_persistence),
+        ("Lua Unit Test: Pure Digit Extractor (test_digit_extractor.lua)", lambda: run_lua_test("test_digit_extractor.lua")),
+        ("Lua Unit Test: Song Formatting & Unknown Plays (test_song_formatting.lua)", lambda: run_lua_test("test_song_formatting.lua")),
+        ("Lua Unit Test: Continuation Unwrap (test_continuation_unwrap.lua)", lambda: run_lua_test("test_continuation_unwrap.lua")),
     ]
 
     for name, fn in tests:

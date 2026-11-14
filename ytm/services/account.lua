@@ -106,6 +106,53 @@ function account.fetch_current_user_info(access_token)
   return nil
 end
 
+--- 使用 Cookie 获取当前账号个人信息 (Cookie 模式: account_menu 接口，对齐 0.1.x 原生直调规范)
+function account.fetch_cookie_user_info(cookie_str)
+  if not cookie_str or string.len(cookie_str) == 0 then return nil end
+  local cleaned = auth_cookie.clean_cookie(cookie_str)
+
+  local payload = {
+    context = {
+      client = {
+        clientName = "WEB_REMIX",
+        clientVersion = "1.20261110.04.00",
+        hl = "zh-CN",
+        gl = "JP"
+      }
+    }
+  }
+
+  local auth_header = auth_cookie.generate_authorization(cleaned, constants.HOST_MUSIC)
+  local req_headers = {
+    ["Content-Type"] = "application/json",
+    ["User-Agent"] = constants.CLIENT_WEB_REMIX.userAgent,
+    ["Origin"] = constants.HOST_MUSIC,
+    ["X-Origin"] = constants.HOST_MUSIC,
+    ["X-Goog-Api-Format-Version"] = "2",
+    ["Cookie"] = cleaned
+  }
+  if auth_header then
+    req_headers["Authorization"] = auth_header
+  end
+
+  local ok, res = pcall(function()
+    return host.http({
+      url = constants.HOST_MUSIC .. "/youtubei/v1/account/account_menu",
+      method = "POST",
+      headers = req_headers,
+      body = host.json_encode(payload)
+    })
+  end)
+
+  if ok and res and res.status == 200 and res.body then
+    local parse_ok, data = pcall(host.json_decode, res.body)
+    if parse_ok and data then
+      return extract_account_info(data)
+    end
+  end
+  return nil
+end
+
 --- 检查并返回当前已保存的会话
 function account.session()
   if not store.is_authenticated() then
@@ -116,14 +163,29 @@ function account.session()
   local saved_avatar = store.get("user_avatar")
   local saved_id = store.get("user_id")
 
-  -- 自动恢复/纠正逻辑：如果当前只有 "YouTube 用户" 占位名，自动静默通过 guide 接口更新为真正账号名与头像
+  -- 自动恢复/纠正逻辑：如果当前只有 "YouTube User" / "YouTube 用户" 占位名，自动静默更新为真正账号名与头像
   local access_token = store.get_access_token()
-  if access_token and string.len(access_token) > 0 and (not saved_name or saved_name == "YouTube 用户" or saved_name == "") then
+  local cookie = store.get_cookie()
+
+  if access_token and string.len(access_token) > 0 and (not saved_name or saved_name == "YouTube 用户" or saved_name == "YouTube User" or saved_name == "") then
     local info = account.fetch_current_user_info(access_token)
-    if info and info.name and info.name ~= "YouTube 用户" then
+    if info and info.name and info.name ~= "YouTube 用户" and info.name ~= "YouTube User" then
       saved_name = info.name
       saved_avatar = info.avatarUrl or saved_avatar
       saved_id = info.handle or saved_id
+      store.set("user_name", saved_name)
+      store.set("user_avatar", saved_avatar)
+      store.set("user_id", saved_id)
+    end
+  elseif cookie and string.len(cookie) > 0 and (not saved_name or saved_name == "YouTube User" or saved_name == "YouTube 用户" or saved_name == "") then
+    local info = account.fetch_cookie_user_info(cookie)
+    if info and info.name and info.name ~= "YouTube User" and info.name ~= "YouTube 用户" then
+      saved_name = info.name
+      saved_avatar = info.avatarUrl or saved_avatar
+      saved_id = info.handle or saved_id
+      -- 同时把清洗后的 cookie 回写持久化
+      local clean_c = auth_cookie.clean_cookie(cookie)
+      store.set_cookie(clean_c)
       store.set("user_name", saved_name)
       store.set("user_avatar", saved_avatar)
       store.set("user_id", saved_id)
@@ -213,71 +275,111 @@ function account.qrCheck(args)
   end
 end
 
---- 使用 Cookie 进行登录验证并持久化 (保留 Cookie 导入能力)
+--- 使用 Cookie 进行登录验证并持久化 (支持直接传参校验，若为空或校验失败自动 fallback 读取本地 storage.json)
 function account.login_cookie(args)
-  local cookie_str = tostring(args and args.cookie or "")
-  if string.len(cookie_str) == 0 then
-    error("Cookie 不能为空", 0)
-  end
+  local raw_cookie = tostring(args and args.cookie or "")
+  -- 清理首尾空格与换行符
+  raw_cookie = raw_cookie:match("^%s*(.-)%s*$") or ""
 
-  local payload = {
-    context = {
-      client = {
-        clientName = "WEB_REMIX",
-        clientVersion = "1.20261110.04.00",
-        hl = "zh-CN",
-        gl = "JP"
-      }
-    }
-  }
-
-  local auth_header = auth_cookie.generate_authorization(cookie_str, constants.HOST_MUSIC)
-  local req_headers = {
-    ["Content-Type"] = "application/json",
-    ["User-Agent"] = constants.CLIENT_WEB_REMIX.userAgent,
-    ["Origin"] = constants.HOST_MUSIC,
-    ["X-Origin"] = constants.HOST_MUSIC,
-    ["X-Goog-Api-Format-Version"] = "2",
-    ["Cookie"] = cookie_str
-  }
-  if auth_header then
-    req_headers["Authorization"] = auth_header
-  end
-
-  local res = host.http({
-    url = constants.HOST_MUSIC .. "/youtubei/v1/account/account_menu",
-    method = "POST",
-    headers = req_headers,
-    body = host.json_encode(payload)
-  })
-
-  if not res or res.status ~= 200 then
-    error("网络连接失败，请检查代理是否正常开启 (HTTP " .. tostring(res and res.status or "nil") .. ")", 0)
-  end
-
-  local ok, data = pcall(host.json_decode, res.body)
-  local info = ok and extract_account_info(data)
-
-  if not info then
-    if not string.find(cookie_str, "LOGIN_INFO") then
-      error("登录失败：检测到 Cookie 中缺少 YouTube 核心会话 (LOGIN_INFO)。请重新运行 tools/get_cookie.js，确保浏览器完全跳转回 YouTube Music 页面后再抓取！", 0)
+  -- 1. 如果传入为空，自动 fallback 到本地 storage 中已有的 Cookie (例如由 get_cookie.js 自动注入)
+  if string.len(raw_cookie) == 0 then
+    local saved = store.get_cookie()
+    if saved and string.len(saved) > 0 then
+      raw_cookie = saved:match("^%s*(.-)%s*$") or ""
     end
   end
 
-  local user_name = (info and info.name) or "YouTube User"
-  local user_avatar = (info and info.avatarUrl) or "https://www.youtube.com/s/desktop/9906d203/img/favicon_144x144.png"
-  local user_id = (info and info.handle) or "yt_authenticated"
+  if string.len(raw_cookie) == 0 then
+    -- 无有效 Cookie 输入且本地存储为空，返回 nil 让 Lazer 弹出 "这个 Cookie 无效或已过期。"
+    return nil
+  end
 
-  store.set_cookie(cookie_str)
-  store.set("user_name", user_name)
-  store.set("user_avatar", user_avatar)
-  store.set("user_id", user_id)
+  -- 内部校验逻辑
+  local function verify_cookie(candidate_cookie)
+    if not candidate_cookie or string.len(candidate_cookie) == 0 then
+      return nil
+    end
 
-  return {
-    id = user_id,
-    name = user_name,
-    avatarUrl = user_avatar
-  }
+    local cookie_str = auth_cookie.clean_cookie(candidate_cookie)
+    local payload = {
+      context = {
+        client = {
+          clientName = "WEB_REMIX",
+          clientVersion = "1.20261110.04.00",
+          hl = "zh-CN",
+          gl = "JP"
+        }
+      }
+    }
+
+    local auth_header = auth_cookie.generate_authorization(cookie_str, constants.HOST_MUSIC)
+    local req_headers = {
+      ["Content-Type"] = "application/json",
+      ["User-Agent"] = constants.CLIENT_WEB_REMIX.userAgent,
+      ["Origin"] = constants.HOST_MUSIC,
+      ["X-Origin"] = constants.HOST_MUSIC,
+      ["X-Goog-Api-Format-Version"] = "2",
+      ["Cookie"] = cookie_str
+    }
+    if auth_header then
+      req_headers["Authorization"] = auth_header
+    end
+
+    local ok, res = pcall(function()
+      return host.http({
+        url = constants.HOST_MUSIC .. "/youtubei/v1/account/account_menu",
+        method = "POST",
+        headers = req_headers,
+        body = host.json_encode(payload)
+      })
+    end)
+
+    if not ok or not res or res.status ~= 200 or not res.body then
+      return nil
+    end
+
+    local parse_ok, data = pcall(host.json_decode, res.body)
+    local info = parse_ok and extract_account_info(data)
+
+    if not info and not string.find(cookie_str, "LOGIN_INFO") then
+      return nil
+    end
+
+    local user_name = (info and info.name) or "YouTube User"
+    local user_avatar = (info and info.avatarUrl) or "https://www.youtube.com/s/desktop/9906d203/img/favicon_144x144.png"
+    local user_id = (info and info.handle) or "yt_authenticated"
+
+    store.set_cookie(cookie_str)
+    store.set("user_name", user_name)
+    store.set("user_avatar", user_avatar)
+    store.set("user_id", user_id)
+
+    return {
+      id = user_id,
+      name = user_name,
+      avatarUrl = user_avatar
+    }
+  end
+
+  -- 首先尝试当前 candidate
+  local result = verify_cookie(raw_cookie)
+  if result then
+    return result
+  end
+
+  -- 2. 如果当前 candidate 校验失败，且与本地 storage 的 Cookie 不同，尝试 fallback 到本地 storage
+  local saved_cookie = store.get_cookie()
+  if saved_cookie and string.len(saved_cookie) > 0 then
+    local clean_saved = saved_cookie:match("^%s*(.-)%s*$") or ""
+    if clean_saved ~= raw_cookie then
+      local fallback_result = verify_cookie(clean_saved)
+      if fallback_result then
+        return fallback_result
+      end
+    end
+  end
+
+  return nil
 end
 
 --- 退出登录
