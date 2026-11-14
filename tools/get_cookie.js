@@ -522,7 +522,7 @@ function evaluateCookie(cookieStr) {
 function fetchAccountProfile(cookieStr) {
   return new Promise((resolve) => {
     try {
-      const m = cookieStr.match(/[;%s]?SAPISID=([^;%s\r\n]+)/) || cookieStr.match(/[;%s]?__Secure-3PAPISID=([^;%s\r\n]+)/);
+      const m = cookieStr.match(/[;\s]?SAPISID=([^;\s\r\n]+)/) || cookieStr.match(/[;\s]?__Secure-3PAPISID=([^;\s\r\n]+)/);
       if (!m) return resolve(null);
       const sapisid = m[1];
       const ts = Math.floor(Date.now() / 1000);
@@ -636,12 +636,31 @@ async function main() {
 
       if (ytTarget && ytTarget.webSocketDebuggerUrl) {
         let cookies = null;
+        let domProfile = null;
         try {
           const cdp = new CDPClient(ytTarget.webSocketDebuggerUrl);
           await cdp.connect();
           const res = await cdp.send('Network.getAllCookies');
-          cdp.close();
           if (res && res.cookies) cookies = res.cookies;
+
+          // 尝试从浏览器已经渲染的页面中直接提取头像和用户名（零网络开销，不依赖 Node 外网代理）
+          try {
+            const evalRes = await cdp.send('Runtime.evaluate', {
+              expression: `(() => {
+                const img = document.querySelector('ytmusic-settings-button img, yt-img-shadow#avatar img, button#avatar-btn img');
+                return {
+                  name: img ? (img.getAttribute('alt') || '') : '',
+                  avatarUrl: img ? (img.src || '') : ''
+                };
+              })()`,
+              returnByValue: true
+            });
+            if (evalRes && evalRes.result && evalRes.result.value) {
+              domProfile = evalRes.result.value;
+            }
+          } catch (_) {}
+
+          cdp.close();
         } catch (_) {}
 
         if (cookies && cookies.length > 0) {
@@ -656,13 +675,30 @@ async function main() {
               .map(([k, v]) => `${k}=${v}`)
               .join('; ');
 
-            // 向 Google InnerTube 发送 account_menu 校验并提取真实账号昵称与头像
-            const profile = await fetchAccountProfile(cookieStr);
-            if (profile && profile.name) {
-              capturedCookie = cookieStr;
-              capturedProfile = profile;
-              break;
+            // 核心凭据齐备，立即判定捕获成功，不再阻塞主循环
+            capturedCookie = cookieStr;
+
+            // 优先使用页面 DOM 提取的头像/昵称
+            if (domProfile && (domProfile.name || domProfile.avatarUrl)) {
+              capturedProfile = {
+                name: domProfile.name || 'YouTube 用户',
+                id: domProfile.name || 'yt_authenticated',
+                avatarUrl: domProfile.avatarUrl || ''
+              };
             }
+
+            // 容错尝试 InnerTube account_menu（设置 2s 超时，网络不通时不阻塞退出）
+            try {
+              const apiProfile = await Promise.race([
+                fetchAccountProfile(cookieStr),
+                new Promise(r => setTimeout(() => r(null), 2000))
+              ]);
+              if (apiProfile && apiProfile.name) {
+                capturedProfile = apiProfile;
+              }
+            } catch (_) {}
+
+            break;
           }
         }
       }
