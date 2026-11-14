@@ -93,8 +93,8 @@ function auth_cookie.clean_cookie(cookie_str)
   local keys = {}
   local map = {}
 
-  for part in string.gmatch(cookie_str, "[^;]+") do
-    part = string.gsub(part, "^%s+", "")
+  for raw_part in string.gmatch(cookie_str, "[^;]+") do
+    local part = string.gsub(raw_part, "^%s+", "")
     part = string.gsub(part, "%s+$", "")
     if string.len(part) > 0 then
       local eq_pos = string.find(part, "=", 1, true)

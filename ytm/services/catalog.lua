@@ -396,37 +396,8 @@ function catalog_service.favorites(args)
           cached_favs_cover = songs[1].coverUrl
         end
 
-        -- 连续遍历拉取后续 continuation 分页，拉齐所有有效曲目
-        local cur_token = next_token
-        local pages_walked = 0
-        local seen = {}
-        for _, s in ipairs(songs) do seen[s.id] = true end
-        while cur_token and string.len(cur_token) > 0 and pages_walked < 10 do
-          pages_walked = pages_walked + 1
-          local c_payload = { continuation = cur_token }
-          local c_ok, c_data = false, nil
-          if is_pure_oauth then
-            c_ok, c_data = pcall(transport.post_youtube, "browse?alt=json", c_payload, constants.CLIENT_TVHTML5)
-          else
-            c_ok, c_data = pcall(transport.post_music, "browse", c_payload, constants.CLIENT_WEB_REMIX)
-            if not c_ok or not c_data then
-              c_ok, c_data = pcall(transport.post_youtube, "browse?alt=json", c_payload, constants.CLIENT_TVHTML5)
-            end
-          end
-          if c_ok and c_data then
-            local more_songs, new_token = browse_parser.parse_continuation_songs(c_data, seen)
-            if more_songs and #more_songs > 0 then
-              for _, s in ipairs(more_songs) do
-                table.insert(songs, s)
-              end
-            end
-            cur_token = new_token
-          else
-            break
-          end
-        end
         cached_favs = songs
-        cached_favs_token = cur_token
+        cached_favs_token = next_token
         cached_favs_total_count = math.max(#songs, cached_favs_total_count or 0)
       end
     end
@@ -435,7 +406,7 @@ function catalog_service.favorites(args)
   cached_favs = cached_favs or {}
 
   -- 若请求的 offset 达到了当前缓存末尾，且存在后续 continuation 令牌，执行增量续拉
-  if offset >= #cached_favs and cached_favs_token then
+  if offset >= #cached_favs and cached_favs_token and string.len(cached_favs_token) > 0 then
     local cookie = store.get_cookie()
     local access_token = store.get_access_token()
     local is_pure_oauth = (not cookie or string.len(cookie) == 0) and (access_token and string.len(access_token) > 0)

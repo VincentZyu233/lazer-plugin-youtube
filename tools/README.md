@@ -1,4 +1,4 @@
-# Lazer YouTube Music 凭据获取工具 (v0.2.2)
+# Lazer YouTube Music 凭据获取工具 (v0.2.3)
 
 本目录提供了全自动的 YouTube Music 登录凭据获取工具以及插件的一键校验构建脚本，全面原生支持 **Windows**、**macOS** 与 **Linux** 三大操作系统。
 

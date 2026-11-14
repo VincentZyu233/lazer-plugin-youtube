@@ -177,13 +177,13 @@ function account.session()
       store.set("user_avatar", saved_avatar)
       store.set("user_id", saved_id)
     end
-  elseif cookie and string.len(cookie) > 0 and (not saved_name or saved_name == "YouTube User" or saved_name == "YouTube 用户" or saved_name == "") then
+  elseif cookie and string.len(cookie) > 0 and (not saved_name or saved_name == "YouTube User" or saved_name == "YouTube 用户" or saved_name == "" or not saved_avatar or string.find(saved_avatar, "default-user", 1, true)) then
     local info = account.fetch_cookie_user_info(cookie)
     if info and info.name and info.name ~= "YouTube User" and info.name ~= "YouTube 用户" then
       saved_name = info.name
       saved_avatar = info.avatarUrl or saved_avatar
       saved_id = info.handle or saved_id
-      -- 同时把清洗后的 cookie 回写持久化
+      -- 同时把清洗后的 cookie 与真实个人资料回写持久化
       local clean_c = auth_cookie.clean_cookie(cookie)
       store.set_cookie(clean_c)
       store.set("user_name", saved_name)
