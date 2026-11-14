@@ -1,4 +1,4 @@
-# Lazer YouTube Music 凭据获取工具 (v0.2.1)
+# Lazer YouTube Music 凭据获取工具 (v0.2.2)
 
 本目录提供了全自动的 YouTube Music 登录凭据获取工具以及插件的一键校验构建脚本，全面原生支持 **Windows**、**macOS** 与 **Linux** 三大操作系统。
 
@@ -24,7 +24,8 @@ tools/
 node tools/get_cookie.js
 ```
 脚本会自动探测系统中的 Chrome / Edge / Brave / Chromium 浏览器并拉起独立窗口引导登录。登录成功后：
-- **跨平台自动注入**：自动识别 Windows (`%APPDATA%`)、macOS (`~/Library/Application Support/dev.naominet.lazer`) 和 Linux (`~/.local/share/dev.naominet.lazer`) 的数据存储位置，直接写入 `storage.json` 并输出文件的**本地物理绝对路径**。在 Lazer 中直接点击【登录】（即使输入框留空）或重启/刷新 Lazer 即可瞬间完成登录。
+- **跨平台自动注入**：自动识别 Windows (`%APPDATA%`)、macOS (`~/Library/Application Support/dev.naominet.lazer`) 和 Linux (`~/.local/share/dev.naominet.lazer`) 的数据存储位置，直接写入 `storage.json` 并输出文件的**本地物理绝对路径**。
+- **极简登录体验**：在 Lazer 的 Cookie 输入框中直接输入 `-1` 或 `LOCAL` 点击【登录】（绕过 Flutter 前端空值拦截），或直接重启 Lazer 客户端，即可瞬间完成登录。
 - **自动复制剪贴板**：跨平台适配 PowerShell/clip (Win)、`pbcopy` (Mac)、`wl-copy`/`xclip`/`xsel` (Linux)，完整复制到系统剪贴板备用。
 - **窗口保持开启**：默认保留浏览器窗口可继续播放试听。
 

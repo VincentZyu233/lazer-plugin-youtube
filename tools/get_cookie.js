@@ -617,7 +617,7 @@ async function main() {
     if (injectedPath) {
       console.log(`[✓] 成功将最新凭据自动注入 Lazer 本地插件存储！`);
       console.log(`    本地绝对路径: ${injectedPath}`);
-      console.log(`    使用指引: 在 Lazer 中打开 Cookie 登录直接点击【登录】（即使输入框为空），或重启/刷新 Lazer 即可直接完成登录！\n`);
+      console.log(`    使用指引: 在 Lazer 的 Cookie 输入框中输入 -1 或 LOCAL 点击【登录】，或直接重启 Lazer 即可直接完成登录！\n`);
     } else {
       console.log(`[*] 未能定位或写入 Lazer 本地存储路径，请手动粘贴 Cookie 登录。\n`);
     }

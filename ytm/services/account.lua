@@ -275,24 +275,15 @@ function account.qrCheck(args)
   end
 end
 
---- 使用 Cookie 进行登录验证并持久化 (支持直接传参校验，若为空或校验失败自动 fallback 读取本地 storage.json)
+--- 使用 Cookie 进行登录验证并持久化 (支持直接传参校验，或输入 -1 / LOCAL 占位符直接读取本地 storage.json)
 function account.login_cookie(args)
   local raw_cookie = tostring(args and args.cookie or "")
   -- 清理首尾空格与换行符
   raw_cookie = raw_cookie:match("^%s*(.-)%s*$") or ""
+  local lower_cookie = string.lower(raw_cookie)
 
-  -- 1. 如果传入为空，自动 fallback 到本地 storage 中已有的 Cookie (例如由 get_cookie.js 自动注入)
-  if string.len(raw_cookie) == 0 then
-    local saved = store.get_cookie()
-    if saved and string.len(saved) > 0 then
-      raw_cookie = saved:match("^%s*(.-)%s*$") or ""
-    end
-  end
-
-  if string.len(raw_cookie) == 0 then
-    -- 无有效 Cookie 输入且本地存储为空，返回 nil 让 Lazer 弹出 "这个 Cookie 无效或已过期。"
-    return nil
-  end
+  -- 判断是否为读取本地存储的快捷标记 (-1, local, store, storage)
+  local is_local_magic = (lower_cookie == "-1" or lower_cookie == "local" or lower_cookie == "store" or lower_cookie == "storage")
 
   -- 内部校验逻辑
   local function verify_cookie(candidate_cookie)
@@ -301,6 +292,10 @@ function account.login_cookie(args)
     end
 
     local cookie_str = auth_cookie.clean_cookie(candidate_cookie)
+    if string.len(cookie_str) == 0 then
+      return nil
+    end
+
     local payload = {
       context = {
         client = {
@@ -361,13 +356,27 @@ function account.login_cookie(args)
     }
   end
 
-  -- 首先尝试当前 candidate
+  -- 1. 如果匹配快捷标记或为空：直接读取本地 storage.json 凭据，跳过对快捷标记本身的无效网络请求
+  if is_local_magic or string.len(raw_cookie) == 0 then
+    local saved = store.get_cookie()
+    if saved and string.len(saved) > 0 then
+      local clean_saved = saved:match("^%s*(.-)%s*$") or ""
+      local local_result = verify_cookie(clean_saved)
+      if local_result then
+        return local_result
+      end
+    end
+    -- 本地无有效凭据，返回 nil 让 Lazer 弹出提示
+    return nil
+  end
+
+  -- 2. 正常 Cookie 字符串输入：首先尝试当前 candidate
   local result = verify_cookie(raw_cookie)
   if result then
     return result
   end
 
-  -- 2. 如果当前 candidate 校验失败，且与本地 storage 的 Cookie 不同，尝试 fallback 到本地 storage
+  -- 3. 如果当前 candidate 校验失败，且与本地 storage 的 Cookie 不同，尝试 fallback 到本地 storage
   local saved_cookie = store.get_cookie()
   if saved_cookie and string.len(saved_cookie) > 0 then
     local clean_saved = saved_cookie:match("^%s*(.-)%s*$") or ""
