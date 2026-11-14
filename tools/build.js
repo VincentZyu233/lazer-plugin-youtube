@@ -61,7 +61,15 @@ function collectFiles(dir, base = '') {
         collectFiles(fullPath, relPath);
       }
     } else {
-      if (entry.name === 'manifest.json' || entry.name === 'main.lua' || entry.name === 'README.md' || entry.name === 'LICENSE' || base.startsWith('ytm') || base.startsWith('assets')) {
+      const isAllowed = 
+        entry.name === 'manifest.json' ||
+        entry.name === 'LICENSE' ||
+        entry.name.endsWith('.lua') ||
+        entry.name.endsWith('.md') ||
+        entry.name.endsWith('.txt') ||
+        entry.name.endsWith('.json');
+
+      if (isAllowed && (entry.name === 'manifest.json' || entry.name === 'main.lua' || entry.name === 'README.md' || entry.name === 'LICENSE' || base.startsWith('ytm'))) {
         filesToPack.push({ fullPath, relPath });
       }
     }
