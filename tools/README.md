@@ -38,4 +38,6 @@ node tools/get_cookie.js --skip-storage
 ### 3. 抓取 Cookie 成功后自动关闭浏览器
 ```bash
 node tools/get_cookie.js -q
+# 或
+node tools/get_cookie.js --quit
 ```
