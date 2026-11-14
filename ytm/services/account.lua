@@ -151,7 +151,7 @@ function account.fetch_cookie_user_info(cookie_str)
   return nil
 end
 
---- 检查并返回当前已保存的会话
+--- 检查并返回当前已保存的会话 (对齐 0.1.14 规范: 100% 纯本地离线秒返，绝不发起网络阻塞)
 function account.session()
   if not store.is_authenticated() then
     return nil
@@ -161,39 +161,15 @@ function account.session()
   local saved_avatar = store.get("user_avatar")
   local saved_id = store.get("user_id")
 
-  -- 自动恢复/纠正逻辑：如果当前只有 "YouTube User" / "YouTube 用户" 占位名，自动静默更新为真正账号名与头像
-  local access_token = store.get_access_token()
-  local cookie = store.get_cookie()
-
-  if access_token and string.len(access_token) > 0 and (not saved_name or saved_name == "YouTube 用户" or saved_name == "YouTube User" or saved_name == "") then
-    local info = account.fetch_current_user_info(access_token)
-    if info and info.name and info.name ~= "YouTube 用户" and info.name ~= "YouTube User" then
-      saved_name = info.name
-      saved_avatar = info.avatarUrl or saved_avatar
-      saved_id = info.handle or saved_id
-      store.set("user_name", saved_name)
-      store.set("user_avatar", saved_avatar)
-      store.set("user_id", saved_id)
-    end
-  elseif cookie and string.len(cookie) > 0 and (not saved_name or saved_name == "YouTube User" or saved_name == "YouTube 用户" or saved_name == "" or not saved_avatar or string.find(saved_avatar, "default-user", 1, true)) then
-    local info = account.fetch_cookie_user_info(cookie)
-    if info and info.name and info.name ~= "YouTube User" and info.name ~= "YouTube 用户" then
-      saved_name = info.name
-      saved_avatar = info.avatarUrl or saved_avatar
-      saved_id = info.handle or saved_id
-      -- 同时把清洗后的 cookie 与真实个人资料回写持久化
-      local clean_c = auth_cookie.clean_cookie(cookie)
-      store.set_cookie(clean_c)
-      store.set("user_name", saved_name)
-      store.set("user_avatar", saved_avatar)
-      store.set("user_id", saved_id)
-    end
-  end
+  -- 严防空字符串 ""：在 Lua 中 "" 是 truthy，但在 Lazer Dart 核心中空 id 会被直接判断为无效用户踢出登录态
+  local user_id = (saved_id and string.len(saved_id) > 0) and saved_id or "yt_authenticated"
+  local user_name = (saved_name and string.len(saved_name) > 0) and saved_name or "YouTube 用户"
+  local user_avatar = (saved_avatar and string.len(saved_avatar) > 0) and saved_avatar or "https://www.youtube.com/s/desktop/9906d203/img/favicon_144x144.png"
 
   return {
-    id = saved_id or "yt_authenticated",
-    name = (saved_name and string.len(saved_name) > 0) and saved_name or "YouTube 用户",
-    avatarUrl = (saved_avatar and string.len(saved_avatar) > 0) and saved_avatar or "https://www.youtube.com/s/desktop/9906d203/img/favicon_144x144.png"
+    id = user_id,
+    name = user_name,
+    avatarUrl = user_avatar
   }
 end
 
@@ -322,29 +298,39 @@ function account.login_cookie(args)
     req_headers["Authorization"] = auth_header
   end
 
-  local res = host.http({
+  local http_ok, res = pcall(host.http, {
     url = constants.HOST_MUSIC .. "/youtubei/v1/account/account_menu",
     method = "POST",
     headers = req_headers,
     body = host.json_encode(payload)
   })
 
-  if not res or res.status ~= 200 then
-    error("网络连接失败，请检查代理是否正常开启 (HTTP " .. tostring(res and res.status or "nil") .. ")", 0)
+  local info = nil
+  if http_ok and res and res.status == 200 and res.body then
+    local ok, data = pcall(host.json_decode, res.body)
+    info = ok and extract_account_info(data)
   end
 
-  local ok, data = pcall(host.json_decode, res.body)
-  local info = ok and extract_account_info(data)
+  -- 优雅降级容错：若因网络/代理偶发超时未能即时解析到账号信息，但 Cookie 中具备核心认证凭据 (LOGIN_INFO & SAPISID)
+  -- 绝不直接抛出中断性 error 导致界面报“连接失败”，而是正常完成凭据落盘，返回有效用户
+  local has_login_info = string.find(cookie_str, "LOGIN_INFO", 1, true) ~= nil
+  local has_sapisid = auth_cookie.get_sapisid(cookie_str) ~= nil
 
-  if not info then
-    if not string.find(cookie_str, "LOGIN_INFO") then
-      error("登录失败：检测到 Cookie 中缺少 YouTube 核心会话 (LOGIN_INFO)。请重新运行 tools/get_cookie.js，确保浏览器完全跳转回 YouTube Music 页面后再抓取！", 0)
+  if not info and not (has_login_info and has_sapisid) then
+    if not http_ok or not res or res.status ~= 200 then
+      error("网络连接失败，请检查代理是否正常开启 (HTTP " .. tostring(res and res.status or "nil") .. ")", 0)
+    else
+      error("登录失败：检测到 Cookie 中缺少 YouTube 核心会话 (LOGIN_INFO / SAPISID)。请重新运行 tools/get_cookie.js 抓取有效凭据！", 0)
     end
   end
 
-  local user_name = (info and info.name) or "YouTube User"
-  local user_avatar = (info and info.avatarUrl) or "https://www.youtube.com/s/desktop/9906d203/img/favicon_144x144.png"
-  local user_id = (info and info.handle) or "yt_authenticated"
+  local saved_name = store.get("user_name")
+  local saved_avatar = store.get("user_avatar")
+  local saved_id = store.get("user_id")
+
+  local user_name = (info and info.name) or ((saved_name and string.len(saved_name) > 0 and saved_name ~= "YouTube 用户") and saved_name or "YouTube 用户")
+  local user_avatar = (info and info.avatarUrl) or ((saved_avatar and string.len(saved_avatar) > 0) and saved_avatar or "https://www.youtube.com/s/desktop/9906d203/img/favicon_144x144.png")
+  local user_id = (info and info.handle) or ((saved_id and string.len(saved_id) > 0) and saved_id or "yt_authenticated")
 
   store.set_cookie(cookie_str)
   store.set("backup_cookie", cookie_str)

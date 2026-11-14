@@ -181,21 +181,33 @@ function copyToClipboard(text) {
   return new Promise((resolve) => {
     const platform = os.platform();
     if (platform === 'win32') {
-      const ps = spawn('powershell', ['-NoProfile', '-Command', '$input | Set-Clipboard']);
-      ps.stdin.write(text);
-      ps.stdin.end();
-      ps.on('close', (code) => {
-        if (code === 0) return resolve(true);
-        const clip = spawn('clip');
-        clip.stdin.write(text);
-        clip.stdin.end();
-        clip.on('close', (c) => resolve(c === 0));
-      });
-      ps.on('error', () => {
-        const clip = spawn('clip');
-        clip.stdin.write(text);
-        clip.stdin.end();
-        clip.on('close', (c) => resolve(c === 0));
+      // Windows 优先使用原生 clip.exe (与 0.1.14 对齐：纯标准流字节写入，0 截断、0 挂起、0 编码污染)
+      const clip = spawn('clip');
+      let handled = false;
+      const fallbackPs = () => {
+        if (handled) return;
+        handled = true;
+        try {
+          const ps = spawn('powershell', ['-NoProfile', '-Command', '$input | Set-Clipboard']);
+          ps.on('error', () => resolve(false));
+          ps.stdin.write(text);
+          ps.stdin.end();
+          ps.on('close', (c) => resolve(c === 0));
+        } catch (_) {
+          resolve(false);
+        }
+      };
+
+      clip.on('error', fallbackPs);
+      clip.stdin.on('error', fallbackPs);
+      clip.stdin.write(text);
+      clip.stdin.end();
+      clip.on('close', (code) => {
+        if (code === 0) {
+          handled = true;
+          return resolve(true);
+        }
+        fallbackPs();
       });
       return;
     }
@@ -299,6 +311,9 @@ function autoInjectToLazerStorage(cookieStr) {
 
     data.user_cookie = cookieStr;
     data.backup_cookie = cookieStr; // 同时记录备用凭据，防止退出登录后无法以 -1 快速找回
+    if (!data.user_id || data.user_id === '') {
+      data.user_id = 'yt_authenticated';
+    }
     if (!data.user_name || data.user_name === '') {
       data.user_name = 'YouTube 用户';
     }
@@ -323,6 +338,9 @@ function saveBackupCredentials(cookieStr) {
     data.user_cookie = cookieStr;
     data.backup_cookie = cookieStr;
     data.backup_time = new Date().toISOString();
+    if (!data.user_id || data.user_id === '') {
+      data.user_id = 'yt_authenticated';
+    }
     if (!data.user_name || data.user_name === '') {
       data.user_name = 'YouTube 用户';
     }
