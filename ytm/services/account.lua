@@ -191,10 +191,23 @@ end
 --- 获取扫码展示用的 URL (Lazer 契约: qrUrl)
 function account.qrUrl(args)
   local key = tostring(args and args.key or "")
-  if key == "" then
-    return "https://youtube.com/activate"
+  local url = "https://youtube.com/activate"
+  if key ~= "" then
+    url = "https://youtube.com/activate?user_code=" .. host.url_encode(key)
   end
-  return "https://youtube.com/activate?user_code=" .. host.url_encode(key)
+
+  -- 特性握手：仅在宿主明确声明支持富会话数据（rich: true）时返回 Table
+  if args and args.rich then
+    return {
+      url = url,
+      code = key,
+      hint = "请在授权页面确认与设备一致的代码",
+      actionUrl = url,
+    }
+  end
+
+  -- 老版本客户端未传 rich，坚决降级返回纯字符串 URL，确保老客户端直接扫码正常打开网页
+  return url
 end
 
 --- 轮询二维码扫码与授权状态 (Lazer 契约: qrCheck)
