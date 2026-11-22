@@ -68,6 +68,7 @@ def main():
         ("Lua Unit Test: Continuation Unwrap (test_continuation_unwrap.lua)", lambda: run_lua_test("test_continuation_unwrap.lua")),
         ("Lua Unit Test: Cookie Trim & SAPISID (test_cookie_trim.lua)", lambda: run_lua_test("test_cookie_trim.lua")),
         ("Lua Unit Test: Playlist Header Count (test_playlist_header.lua)", lambda: run_lua_test("test_playlist_header.lua")),
+        ("Lua Unit Test: Search Episode Filter (test_search_episode_filter.lua)", lambda: run_lua_test("test_search_episode_filter.lua")),
     ]
 
     for name, fn in tests:

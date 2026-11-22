@@ -10,7 +10,7 @@ def test_search(query: str = "iyowa"):
     url = f"{HOST_MUSIC}/youtubei/v1/search"
     payload = {
         "query": query,
-        "params": "EgWKAQIIAWoOEAUQCRADEAQQChAVEBA%3D"
+        "params": "EgWKAQIIAWoMEA4QChADEAQQCRAF"
     }
 
     data = post_innertube(url, payload, CLIENT_WEB_REMIX)
