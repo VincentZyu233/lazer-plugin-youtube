@@ -69,6 +69,29 @@ function search_parser.parse_song_item(it, query, seen_songs, default_artist)
   end
 
   local cols = it.flexColumns or {}
+
+  -- 0. 防御：如果是播客分集/非音乐条目，直接过滤
+  for _, col in ipairs(cols) do
+    local col_rend = col.musicResponsiveListItemFlexColumnRenderer
+    if col_rend and col_rend.text and col_rend.text.runs then
+      for _, r in ipairs(col_rend.text.runs) do
+        local t = nav.trim_str(r.text or "")
+        if t == "分集" or t == "播客" or t == "Episode" or t == "Podcast" or t == "エピソード" or t == "ポッドキャスト" then
+          return nil
+        end
+        local endpoint = nav.nav(r, { "navigationEndpoint", "browseEndpoint" }) or {}
+        local config_endpoint = nav.nav(endpoint, {
+          "browseEndpointContextSupportedConfigs",
+          "browseEndpointContextMusicConfig"
+        })
+        local page_type = config_endpoint and config_endpoint.pageType
+        if page_type == "MUSIC_PAGE_TYPE_EPISODE" or page_type == "MUSIC_PAGE_TYPE_PODCAST" then
+          return nil
+        end
+      end
+    end
+  end
+
   local raw_title = ""
   if cols[1] and cols[1].musicResponsiveListItemFlexColumnRenderer then
     raw_title = nav.extract_text(cols[1].musicResponsiveListItemFlexColumnRenderer.text)
@@ -370,7 +393,12 @@ function search_parser.parse_search_results(data, query)
                      or (browse_id and (string.sub(browse_id, 1, 2) == "VL" or string.sub(browse_id, 1, 2) == "PL"))
                      or (type_label == "播放列表" or type_label == "歌单" or type_label == "Playlist" or type_label == "プレイリスト")
 
-    if is_artist then
+    local is_episode = (page_type == "MUSIC_PAGE_TYPE_EPISODE" or page_type == "MUSIC_PAGE_TYPE_PODCAST")
+                    or (type_label == "分集" or type_label == "播客" or type_label == "Episode" or type_label == "Podcast" or type_label == "エピソード" or type_label == "ポッドキャスト")
+
+    if is_episode then
+      -- 忽略播客和电台分集，不作为音乐返回
+    elseif is_artist then
       local art_id = browse_id or ("yt_artist_" .. title)
       if not seen_artists[art_id] and string.len(title) > 0 then
         seen_artists[art_id] = true

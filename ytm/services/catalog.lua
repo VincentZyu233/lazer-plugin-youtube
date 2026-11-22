@@ -61,12 +61,21 @@ function catalog_service.search(args)
   local results = search_parser.parse_search_results(data, query)
 
   -- 若单曲不足且未满足请求量，发起歌曲过滤搜索作为补充。
-  -- 关键优化：当 requested_limit <= 8 时 (如 Lazer 榜单自动匹配批量并发场景)，
-  -- 只要返回了歌曲或者榜单匹配，严禁发起二次 HTTP 请求，防止串行队列耗时累加突破 Dart 5.0 秒超时！
-  if requested_limit > 8 and #results.songs < requested_limit and #results.songs < 10 then
+  -- 关键优化：
+  -- 1. 当 requested_limit <= 8 时 (如 Lazer 榜单自动匹配批量并发场景)，若已搜到至少 1 首歌，严禁发起二次 HTTP 请求，防止超时；
+  -- 2. 普通搜索场景（requested_limit > 8），只要返回的单曲数未达 requested_limit（例如请求 20 仅搜出 7 首综合歌曲），
+  --    使用标准单曲过滤 params（EgWKAQIIAWoMEA4QChADEAQQCRAF）扩充歌曲，过滤非音乐分集并去重。
+  local need_secondary_search = false
+  if requested_limit <= 8 then
+    need_secondary_search = (#results.songs == 0)
+  else
+    need_secondary_search = (#results.songs < requested_limit)
+  end
+
+  if need_secondary_search then
     local payload_songs = {
       query = query,
-      params = "EgWKAQIIAWoOEAUQCRADEAQQChAVEBA%3D"
+      params = "EgWKAQIIAWoMEA4QChADEAQQCRAF"
     }
     local data_songs = transport.post_music("search", payload_songs, constants.CLIENT_WEB_REMIX)
     if data_songs then
@@ -76,10 +85,14 @@ function catalog_service.search(args)
       for _, s in ipairs(results.songs) do
         seen_songs[s.id] = true
       end
+      local max_songs_cap = math.max(requested_limit, 30)
       for _, it in ipairs(song_items) do
         local s = search_parser.parse_song_item(it, query, seen_songs)
         if s then
           table.insert(results.songs, s)
+          if #results.songs >= max_songs_cap then
+            break
+          end
         end
       end
     end
