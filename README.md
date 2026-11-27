@@ -83,9 +83,9 @@ node tools/build.js
 
 ## 💖 鸣谢与致敬
 
-- [chuxuehaocai/Lazer](https://github.com/chuxuehaocai/Lazer) - 优雅而纯粹的手工打造跨平台音乐播放器。
+- [chuxuehaocai/Lazer](https://github.com/chuxuehaocai/Lazer) - 优雅而纯粹的手工打造跨平台音乐播放器（AGPL-3.0），为本项目提供了核心扩展宿主与运行时环境。
 - [sigma67/ytmusicapi](https://github.com/sigma67/ytmusicapi) - 优秀的 YouTube Music Python API 库（MIT），为本项目的时间戳歌词逆向、安全深度寻址工具与架构分层设计提供了核心灵感。
-- [yt-dlp/yt-dlp](https://github.com/yt-dlp/yt-dlp) - 业界领先的音视频提取框架与逆向工程参考（Unlicense）。
+- [yt-dlp/yt-dlp](https://github.com/yt-dlp/yt-dlp) - 业界领先的音视频提取框架（Unlicense），为本项目音频流逆向工程提供了宝贵参考。
 
 ---
 
