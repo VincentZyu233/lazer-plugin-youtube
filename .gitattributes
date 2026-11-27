@@ -1,7 +1,7 @@
-# GitHub language statistics configuration
-# Exclude documentation directories from language statistics
-docs/** linguist-documentation=true linguist-detectable=false
-temp/** linguist-documentation=true linguist-detectable=false
+# GitHub Linguist 语言统计覆盖配置
+# 默认不将任何 Markdown 文件计入语言统计
+*.md linguist-detectable=false
+*.markdown linguist-detectable=false
 
-# Only count root README in statistics
-README.md linguist-detectable=true linguist-documentation=false
+# 仅将项目根目录说明文档 (README.md) 计入 GitHub 语言统计
+README.md linguist-language=Markdown linguist-detectable=true linguist-documentation=false
