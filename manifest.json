@@ -2,7 +2,7 @@
   "id": "lazer.youtube",
   "name": "YouTube Music",
   "version": "0.2.8",
-  "description": "专为 Lazer 打造的 YouTube & YouTube Music Lua Gateway 插件，支持手机扫码授权登录、InnerTube 纯音频直链调度、毫秒级时序歌词、全域检索与喜欢歌单分页。",
+  "description": "专为 Lazer 打造的 YouTube & YouTube Music Lua Gateway 插件，支持手机扫码授权登录、全域曲库与视频链接检索、InnerTube 纯音频直链调度、毫秒级时序歌词及喜欢歌单分页。",
   "author": "VincentZyu",
   "entry": "main.lua",
   "apiVersion": 1,
